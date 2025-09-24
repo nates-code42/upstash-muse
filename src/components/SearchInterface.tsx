@@ -42,6 +42,7 @@ const SearchInterface = () => {
     upstashUrl: '',
     upstashToken: '',
     openaiApiKey: '',
+    openaiModel: 'gpt-4o',
     systemPrompt: 'You are a helpful AI assistant. Based on the search results provided, give a comprehensive and accurate response to the user\'s query. Only use information from the search results.',
     searchIndex: 'CBM Products1',
     contentFields: 'Name,Description'
@@ -141,7 +142,7 @@ const SearchInterface = () => {
     if (!config.upstashUrl || !config.upstashToken || !config.openaiApiKey || !config.searchIndex) {
       toast({
         title: "Missing Configuration",
-        description: "Please configure your Upstash Search URL, token, index name, and OpenAI credentials",
+        description: "Please configure your Upstash Search URL, token, index name, OpenAI credentials, and model",
         variant: "destructive"
       });
       setShowConfig(true);
@@ -174,10 +175,36 @@ const SearchInterface = () => {
         throw new Error(`Upstash Search failed: ${searchError instanceof Error ? searchError.message : 'Unknown error'}`);
       }
 
-      // Step 2: Generate OpenAI response
-      const contextText = searchResults.map(result => 
-        `Content: ${JSON.stringify(result.content)}\nMetadata: ${JSON.stringify(result.metadata || {})}`
-      ).join('\n\n');
+      // Step 2: Generate OpenAI response with smart context management
+      const formattedResults = searchResults.map((result, index) => {
+        // Extract only relevant fields to reduce token usage
+        const content = result.content || {};
+        const relevantFields: string[] = [];
+        
+        // Add specified content fields
+        const fields = config.contentFields.split(',').map(f => f.trim());
+        fields.forEach(field => {
+          if (content[field]) {
+            relevantFields.push(`${field}: ${content[field]}`);
+          }
+        });
+        
+        return `Result ${index + 1} (Score: ${result.score?.toFixed(2) || 'N/A'}):\n${relevantFields.join('\n')}`;
+      }).join('\n\n');
+
+      // Estimate tokens and truncate if necessary (rough estimate: 4 chars ≈ 1 token)
+      const systemPromptTokens = Math.ceil(config.systemPrompt.length / 4);
+      const queryTokens = Math.ceil(query.length / 4);
+      const maxContextTokens = 6000; // Conservative limit for GPT-4o (8k context)
+      const reservedTokens = systemPromptTokens + queryTokens + 1000; // Reserve for response
+      const availableTokens = maxContextTokens - reservedTokens;
+      const maxContextChars = availableTokens * 4;
+
+      let contextText = formattedResults;
+      if (contextText.length > maxContextChars) {
+        contextText = contextText.substring(0, maxContextChars) + '\n\n[Context truncated to fit model limits...]';
+        console.log('Context truncated to fit model limits');
+      }
 
       const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
@@ -186,7 +213,7 @@ const SearchInterface = () => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'gpt-4',
+          model: config.openaiModel,
           messages: [
             {
               role: 'system',
@@ -197,16 +224,23 @@ const SearchInterface = () => {
               content: query
             }
           ],
-          max_tokens: 1000,
+          max_tokens: 1500,
           temperature: 0.7
         })
       });
 
       if (!openaiResponse.ok) {
-        throw new Error('Failed to generate OpenAI response');
+        const errorData = await openaiResponse.json().catch(() => ({}));
+        const errorMessage = errorData.error?.message || `HTTP ${openaiResponse.status}: ${openaiResponse.statusText}`;
+        throw new Error(`OpenAI API Error: ${errorMessage}`);
       }
 
       const openaiData = await openaiResponse.json();
+      
+      if (!openaiData.choices || !openaiData.choices[0]?.message?.content) {
+        throw new Error('Invalid response format from OpenAI API');
+      }
+      
       const aiResponse = openaiData.choices[0].message.content;
 
       // Add to messages
@@ -232,6 +266,19 @@ const SearchInterface = () => {
       
       if (error instanceof Error) {
         errorMessage = error.message;
+        
+        // Provide more specific guidance based on error type
+        if (errorMessage.includes('OpenAI API Error')) {
+          if (errorMessage.includes('insufficient_quota')) {
+            errorMessage = 'OpenAI API quota exceeded. Please check your billing and usage limits.';
+          } else if (errorMessage.includes('invalid_api_key')) {
+            errorMessage = 'Invalid OpenAI API key. Please check your configuration.';
+          } else if (errorMessage.includes('context_length_exceeded')) {
+            errorMessage = 'Context too long for the model. Try a shorter query or fewer search results.';
+          }
+        } else if (errorMessage.includes('Upstash Search failed')) {
+          errorMessage = 'Search service error. Please verify your Upstash configuration.';
+        }
       }
       
       toast({
@@ -347,6 +394,23 @@ const SearchInterface = () => {
                     />
                   </div>
                   <div>
+                    <Label htmlFor="openai-model">OpenAI Model</Label>
+                    <select
+                      id="openai-model"
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                      value={config.openaiModel}
+                      onChange={(e) => setConfig(prev => ({ ...prev, openaiModel: e.target.value }))}
+                    >
+                      <option value="gpt-4o">GPT-4o (Recommended)</option>
+                      <option value="gpt-4o-mini">GPT-4o Mini (Faster, Cheaper)</option>
+                      <option value="gpt-4o-2024-08-06">GPT-4o (2024-08-06)</option>
+                      <option value="gpt-4-turbo">GPT-4 Turbo</option>
+                    </select>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      GPT-4o is recommended for best performance. GPT-4o Mini for cost efficiency.
+                    </p>
+                  </div>
+                  <div>
                     <Label htmlFor="system-prompt">System Prompt</Label>
                     <Textarea
                       id="system-prompt"
@@ -434,7 +498,7 @@ const SearchInterface = () => {
                 <h3 className="text-lg font-semibold mb-2">Ready to Search</h3>
                 <p className="text-muted-foreground max-w-md mx-auto">
                   {config.upstashUrl && config.upstashToken && config.openaiApiKey && config.searchIndex
-                    ? "Enter a query above to search your Upstash database and get AI-powered responses based on your content."
+                    ? `Enter a query above to search your Upstash database and get AI-powered responses using ${config.openaiModel}.`
                     : "Configure your Upstash Search and OpenAI credentials to get started."
                   }
                 </p>
