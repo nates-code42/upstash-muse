@@ -7,6 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Search, Settings, MessageSquare, Loader2, Database, Brain } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
+import { Search as UpstashSearch } from '@upstash/search';
 
 interface SearchResult {
   id: string;
@@ -61,33 +62,74 @@ const SearchInterface = () => {
     setIsLoading(true);
     
     try {
-      // Step 1: Search Upstash
-      const searchResponse = await fetch(`${config.upstashUrl}/q`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${config.upstashToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          q: query,
-          data: config.contentFields,
-          limit: 10
-        })
-      });
-
-      if (!searchResponse.ok) {
-        const errorText = await searchResponse.text();
-        console.error('Upstash search error:', {
-          status: searchResponse.status,
-          statusText: searchResponse.statusText,
-          body: errorText
+      let searchResults: SearchResult[] = [];
+      
+      // Try multiple approaches to find the working API
+      try {
+        // Approach 1: Try the official SDK
+        const search = new UpstashSearch({
+          url: config.upstashUrl,
+          token: config.upstashToken,
         });
-        throw new Error(`Failed to search Upstash database: ${searchResponse.status} ${searchResponse.statusText}`);
-      }
 
-      const searchData = await searchResponse.json();
-      console.log('Upstash search response:', searchData);
-      const searchResults: SearchResult[] = searchData || [];
+        // Try different method names that might exist on the SDK
+        if (typeof (search as any).query === 'function') {
+          const searchResponse = await (search as any).query({
+            q: query,
+            data: config.contentFields.split(',').map(field => field.trim()),
+            limit: 10
+          });
+          searchResults = searchResponse || [];
+          console.log('SDK search response:', searchResponse);
+        } else {
+          throw new Error('SDK method not found');
+        }
+        
+      } catch (sdkError) {
+        console.log('SDK approach failed, trying REST API:', sdkError);
+        
+        // Approach 2: Try different REST endpoints
+        const endpoints = ['/search', '/query', '/v1/search'];
+        let apiSuccess = false;
+        
+        for (const endpoint of endpoints) {
+          try {
+            const searchResponse = await fetch(`${config.upstashUrl}${endpoint}`, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${config.upstashToken}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                q: query,
+                data: config.contentFields.split(',').map(field => field.trim()),
+                limit: 10
+              })
+            });
+
+            if (searchResponse.ok) {
+              const searchData = await searchResponse.json();
+              console.log(`Success with endpoint ${endpoint}:`, searchData);
+              searchResults = searchData.results || searchData || [];
+              apiSuccess = true;
+              break;
+            } else {
+              const errorText = await searchResponse.text();
+              console.log(`Failed endpoint ${endpoint}:`, {
+                status: searchResponse.status,
+                statusText: searchResponse.statusText,
+                body: errorText
+              });
+            }
+          } catch (endpointError) {
+            console.log(`Error with endpoint ${endpoint}:`, endpointError);
+          }
+        }
+        
+        if (!apiSuccess) {
+          throw new Error('All API endpoints failed. Please check your Upstash Search URL and token.');
+        }
+      }
 
       // Step 2: Generate OpenAI response
       const contextText = searchResults.map(result => 
