@@ -35,7 +35,8 @@ const SearchInterface = () => {
     upstashToken: '',
     openaiApiKey: '',
     systemPrompt: 'You are a helpful AI assistant. Based on the search results provided, give a comprehensive and accurate response to the user\'s query. Only use information from the search results.',
-    searchIndex: 'default'
+    searchIndex: 'default',
+    contentFields: 'Name,Description'
   });
 
   const handleSearch = async () => {
@@ -61,25 +62,32 @@ const SearchInterface = () => {
     
     try {
       // Step 1: Search Upstash
-      const searchResponse = await fetch(`${config.upstashUrl}/search`, {
+      const searchResponse = await fetch(`${config.upstashUrl}/q`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${config.upstashToken}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          index: config.searchIndex,
-          query: query,
+          q: query,
+          data: config.contentFields,
           limit: 10
         })
       });
 
       if (!searchResponse.ok) {
-        throw new Error('Failed to search Upstash database');
+        const errorText = await searchResponse.text();
+        console.error('Upstash search error:', {
+          status: searchResponse.status,
+          statusText: searchResponse.statusText,
+          body: errorText
+        });
+        throw new Error(`Failed to search Upstash database: ${searchResponse.status} ${searchResponse.statusText}`);
       }
 
       const searchData = await searchResponse.json();
-      const searchResults: SearchResult[] = searchData.results || [];
+      console.log('Upstash search response:', searchData);
+      const searchResults: SearchResult[] = searchData || [];
 
       // Step 2: Generate OpenAI response
       const contextText = searchResults.map(result => 
@@ -135,9 +143,15 @@ const SearchInterface = () => {
 
     } catch (error) {
       console.error('Search error:', error);
+      let errorMessage = "An unexpected error occurred";
+      
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      }
+      
       toast({
         title: "Search failed",
-        description: error instanceof Error ? error.message : "An unexpected error occurred",
+        description: errorMessage,
         variant: "destructive"
       });
     } finally {
@@ -218,6 +232,18 @@ const SearchInterface = () => {
                       value={config.searchIndex}
                       onChange={(e) => setConfig(prev => ({ ...prev, searchIndex: e.target.value }))}
                     />
+                  </div>
+                  <div>
+                    <Label htmlFor="content-fields">Content Fields to Search</Label>
+                    <Input
+                      id="content-fields"
+                      placeholder="Name,Description"
+                      value={config.contentFields}
+                      onChange={(e) => setConfig(prev => ({ ...prev, contentFields: e.target.value }))}
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Comma-separated list of fields in your content to search
+                    </p>
                   </div>
                 </div>
                 
