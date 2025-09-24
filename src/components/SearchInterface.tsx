@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Search, Settings, MessageSquare, Loader2, Database, Brain } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { Search as UpstashSearch } from '@upstash/search';
+import { Redis } from '@upstash/redis';
 
 interface SearchResult {
   id: string;
@@ -29,6 +30,13 @@ const SearchInterface = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [showConfig, setShowConfig] = useState(false);
+  const [isLoadingConfig, setIsLoadingConfig] = useState(true);
+  
+  // Redis client for configuration storage
+  const redis = new Redis({
+    url: "https://charmed-grubworm-8756.upstash.io",
+    token: "ASI0AAImcDJhYTZmMzQ0ZmZjYzE0NmVhOTc3YjYxMDVmMmFiM2EyZnAyODc1Ng"
+  });
   
   // Configuration state
   const [config, setConfig] = useState({
@@ -36,9 +44,47 @@ const SearchInterface = () => {
     upstashToken: '',
     openaiApiKey: '',
     systemPrompt: 'You are a helpful AI assistant. Based on the search results provided, give a comprehensive and accurate response to the user\'s query. Only use information from the search results.',
-    searchIndex: 'default',
+    searchIndex: 'CBM Products1',
     contentFields: 'Name,Description'
   });
+
+  // Load configuration from Redis on component mount
+  useEffect(() => {
+    loadConfigFromRedis();
+  }, []);
+
+  const loadConfigFromRedis = async () => {
+    try {
+      setIsLoadingConfig(true);
+      const savedConfig = await redis.get('search-assistant-config');
+      if (savedConfig && typeof savedConfig === 'object') {
+        setConfig(prev => ({ ...prev, ...savedConfig as Partial<typeof config> }));
+        console.log('Loaded config from Redis:', savedConfig);
+      }
+    } catch (error) {
+      console.error('Failed to load config from Redis:', error);
+    } finally {
+      setIsLoadingConfig(false);
+    }
+  };
+
+  const saveConfigToRedis = async () => {
+    try {
+      await redis.set('search-assistant-config', config);
+      toast({
+        title: "Configuration saved",
+        description: "Your settings have been stored securely"
+      });
+      console.log('Saved config to Redis:', config);
+    } catch (error) {
+      console.error('Failed to save config to Redis:', error);
+      toast({
+        title: "Failed to save configuration",
+        description: "Please try again",
+        variant: "destructive"
+      });
+    }
+  };
 
   const handleSearch = async () => {
     if (!query.trim()) {
@@ -49,10 +95,10 @@ const SearchInterface = () => {
       return;
     }
 
-    if (!config.upstashUrl || !config.upstashToken || !config.openaiApiKey) {
+    if (!config.upstashUrl || !config.upstashToken || !config.openaiApiKey || !config.searchIndex) {
       toast({
         title: "Missing Configuration",
-        description: "Please configure your Upstash and OpenAI credentials",
+        description: "Please configure your Upstash Search URL, token, index name, and OpenAI credentials",
         variant: "destructive"
       });
       setShowConfig(true);
@@ -64,71 +110,25 @@ const SearchInterface = () => {
     try {
       let searchResults: SearchResult[] = [];
       
-      // Try multiple approaches to find the working API
+      // Use the correct Upstash Search SDK pattern: client.index("name").search()
       try {
-        // Approach 1: Try the official SDK
-        const search = new UpstashSearch({
+        const client = new UpstashSearch({
           url: config.upstashUrl,
           token: config.upstashToken,
         });
 
-        // Try different method names that might exist on the SDK
-        if (typeof (search as any).query === 'function') {
-          const searchResponse = await (search as any).query({
-            q: query,
-            data: config.contentFields.split(',').map(field => field.trim()),
-            limit: 10
-          });
-          searchResults = searchResponse || [];
-          console.log('SDK search response:', searchResponse);
-        } else {
-          throw new Error('SDK method not found');
-        }
-        
-      } catch (sdkError) {
-        console.log('SDK approach failed, trying REST API:', sdkError);
-        
-        // Approach 2: Try different REST endpoints
-        const endpoints = ['/search', '/query', '/v1/search'];
-        let apiSuccess = false;
-        
-        for (const endpoint of endpoints) {
-          try {
-            const searchResponse = await fetch(`${config.upstashUrl}${endpoint}`, {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${config.upstashToken}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                q: query,
-                data: config.contentFields.split(',').map(field => field.trim()),
-                limit: 10
-              })
-            });
+        const index = client.index(config.searchIndex);
+        const searchResponse = await index.search({
+          query: query,
+          limit: 10,
+        });
 
-            if (searchResponse.ok) {
-              const searchData = await searchResponse.json();
-              console.log(`Success with endpoint ${endpoint}:`, searchData);
-              searchResults = searchData.results || searchData || [];
-              apiSuccess = true;
-              break;
-            } else {
-              const errorText = await searchResponse.text();
-              console.log(`Failed endpoint ${endpoint}:`, {
-                status: searchResponse.status,
-                statusText: searchResponse.statusText,
-                body: errorText
-              });
-            }
-          } catch (endpointError) {
-            console.log(`Error with endpoint ${endpoint}:`, endpointError);
-          }
-        }
+        searchResults = searchResponse || [];
+        console.log('Upstash Search response:', searchResponse);
         
-        if (!apiSuccess) {
-          throw new Error('All API endpoints failed. Please check your Upstash Search URL and token.');
-        }
+      } catch (searchError) {
+        console.error('Upstash Search error:', searchError);
+        throw new Error(`Upstash Search failed: ${searchError instanceof Error ? searchError.message : 'Unknown error'}`);
       }
 
       // Step 2: Generate OpenAI response
@@ -267,13 +267,16 @@ const SearchInterface = () => {
                     />
                   </div>
                   <div>
-                    <Label htmlFor="search-index">Search Index</Label>
+                    <Label htmlFor="search-index">Search Index Name</Label>
                     <Input
                       id="search-index"
-                      placeholder="default"
+                      placeholder="CBM Products1"
                       value={config.searchIndex}
                       onChange={(e) => setConfig(prev => ({ ...prev, searchIndex: e.target.value }))}
                     />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Your Upstash Search index name (e.g., "CBM Products1")
+                    </p>
                   </div>
                   <div>
                     <Label htmlFor="content-fields">Content Fields to Search</Label>
@@ -313,12 +316,19 @@ const SearchInterface = () => {
                 </div>
               </div>
               
-              <div className="flex justify-end">
+              <div className="flex justify-end gap-3">
+                <Button 
+                  variant="outline" 
+                  onClick={() => setShowConfig(false)}
+                >
+                  Cancel
+                </Button>
                 <Button 
                   variant="premium" 
-                  onClick={() => setShowConfig(false)}
+                  onClick={saveConfigToRedis}
                   className="gap-2"
                 >
+                  <Database className="w-4 h-4" />
                   Save Configuration
                 </Button>
               </div>
@@ -360,7 +370,19 @@ const SearchInterface = () => {
 
         {/* Messages */}
         <div className="space-y-6">
-          {messages.length === 0 ? (
+          {isLoadingConfig ? (
+            <Card className="text-center py-12 shadow-card">
+              <CardContent>
+                <div className="w-16 h-16 bg-primary-light rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Loader2 className="w-8 h-8 text-primary animate-spin" />
+                </div>
+                <h3 className="text-lg font-semibold mb-2">Loading Configuration</h3>
+                <p className="text-muted-foreground max-w-md mx-auto">
+                  Retrieving your saved settings...
+                </p>
+              </CardContent>
+            </Card>
+          ) : messages.length === 0 ? (
             <Card className="text-center py-12 shadow-card">
               <CardContent>
                 <div className="w-16 h-16 bg-primary-light rounded-full flex items-center justify-center mx-auto mb-4">
@@ -368,7 +390,10 @@ const SearchInterface = () => {
                 </div>
                 <h3 className="text-lg font-semibold mb-2">Ready to Search</h3>
                 <p className="text-muted-foreground max-w-md mx-auto">
-                  Enter a query above to search your Upstash database and get AI-powered responses based on your content.
+                  {config.upstashUrl && config.upstashToken && config.openaiApiKey && config.searchIndex
+                    ? "Enter a query above to search your Upstash database and get AI-powered responses based on your content."
+                    : "Configure your Upstash Search and OpenAI credentials to get started."
+                  }
                 </p>
               </CardContent>
             </Card>
