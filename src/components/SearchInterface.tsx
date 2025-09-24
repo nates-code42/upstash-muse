@@ -8,7 +8,6 @@ import { Label } from '@/components/ui/label';
 import { Search, Settings, MessageSquare, Loader2, Database, Brain } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { Search as UpstashSearch } from '@upstash/search';
-import { Redis } from '@upstash/redis';
 
 interface SearchResult {
   id: string;
@@ -32,11 +31,11 @@ const SearchInterface = () => {
   const [showConfig, setShowConfig] = useState(false);
   const [isLoadingConfig, setIsLoadingConfig] = useState(true);
   
-  // Redis client for configuration storage
-  const redis = new Redis({
+  // Redis REST API configuration for browser use
+  const redisConfig = {
     url: "https://charmed-grubworm-8756.upstash.io",
     token: "ASI0AAImcDJhYTZmMzQ0ZmZjYzE0NmVhOTc3YjYxMDVmMmFiM2EyZnAyODc1Ng"
-  });
+  };
   
   // Configuration state
   const [config, setConfig] = useState({
@@ -53,10 +52,54 @@ const SearchInterface = () => {
     loadConfigFromRedis();
   }, []);
 
+  const redisGet = async (key: string) => {
+    try {
+      const response = await fetch(`${redisConfig.url}/get/${encodeURIComponent(key)}`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${redisConfig.token}`,
+        },
+      });
+      
+      if (!response.ok) {
+        console.log('Redis GET failed:', response.status, response.statusText);
+        return null;
+      }
+      
+      const data = await response.json();
+      return data.result;
+    } catch (error) {
+      console.error('Redis GET error:', error);
+      return null;
+    }
+  };
+
+  const redisSet = async (key: string, value: any) => {
+    try {
+      const response = await fetch(`${redisConfig.url}/set/${encodeURIComponent(key)}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${redisConfig.token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(value),
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Redis SET failed: ${response.status} ${response.statusText}`);
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error('Redis SET error:', error);
+      throw error;
+    }
+  };
+
   const loadConfigFromRedis = async () => {
     try {
       setIsLoadingConfig(true);
-      const savedConfig = await redis.get('search-assistant-config');
+      const savedConfig = await redisGet('search-assistant-config');
       if (savedConfig && typeof savedConfig === 'object') {
         setConfig(prev => ({ ...prev, ...savedConfig as Partial<typeof config> }));
         console.log('Loaded config from Redis:', savedConfig);
@@ -70,10 +113,10 @@ const SearchInterface = () => {
 
   const saveConfigToRedis = async () => {
     try {
-      await redis.set('search-assistant-config', config);
+      await redisSet('search-assistant-config', config);
       toast({
         title: "Configuration saved",
-        description: "Your settings have been stored securely"
+        description: "Your settings have been stored securely in Redis"
       });
       console.log('Saved config to Redis:', config);
     } catch (error) {
