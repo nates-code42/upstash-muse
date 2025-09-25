@@ -618,8 +618,10 @@ Please provide a comprehensive answer based on this information.`;
                   onChange={(e) => setConfig(prev => ({ ...prev, openaiModel: e.target.value }))}
                   className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
                 >
-                  <option value="gpt-4o-mini">gpt-4o-mini</option>
+                  <option value="gpt-5-mini">gpt-5-mini</option>
+                  <option value="gpt-4.1-mini">gpt-4.1-mini</option>
                   <option value="gpt-4o">gpt-4o</option>
+                  <option value="gpt-4o-mini">gpt-4o-mini</option>
                   <option value="gpt-3.5-turbo">gpt-3.5-turbo</option>
                 </select>
               </div>
