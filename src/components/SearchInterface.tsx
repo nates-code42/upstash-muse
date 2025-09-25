@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { Search, Settings, MessageSquare, Loader2, Database, Brain } from 'lucide-react';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Search, Settings, MessageSquare, Loader2, Database, Brain, Send, Copy, ExternalLink, Bot, User } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { Search as UpstashSearch } from '@upstash/search';
 
@@ -24,12 +25,22 @@ interface Message {
   searchResults?: SearchResult[];
 }
 
+interface Source {
+  id: string;
+  title: string;
+  description: string;
+  url: string;
+  metadata?: any;
+}
+
 const SearchInterface = () => {
   const [query, setQuery] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [showConfig, setShowConfig] = useState(false);
   const [isLoadingConfig, setIsLoadingConfig] = useState(true);
+  const [activeSources, setActiveSources] = useState<Source[]>([]);
+  const chatEndRef = useRef<HTMLDivElement>(null);
   
   // Redis REST API configuration for browser use
   const redisConfig = {
@@ -342,6 +353,7 @@ const SearchInterface = () => {
       };
 
       setMessages(prev => [newMessage, ...prev]);
+      setActiveSources(processSearchResultsToSources(searchResults));
       setQuery('');
       
       toast({
@@ -387,6 +399,80 @@ const SearchInterface = () => {
     }
   };
 
+  const copyToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast({
+        title: "Copied!",
+        description: "Message copied to clipboard"
+      });
+    } catch (error) {
+      // Fallback for older browsers
+      const textArea = document.createElement('textarea');
+      textArea.value = text;
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      try {
+        document.execCommand('copy');
+        toast({
+          title: "Copied!",
+          description: "Message copied to clipboard"
+        });
+      } catch (fallbackError) {
+        toast({
+          title: "Copy failed",
+          description: "Unable to copy to clipboard",
+          variant: "destructive"
+        });
+      }
+      document.body.removeChild(textArea);
+    }
+  };
+
+  const processSearchResultsToSources = (searchResults: SearchResult[]): Source[] => {
+    return searchResults.map((result, index) => {
+      const metadata = result.metadata || {};
+      const content = result.content || {};
+      
+      // Extract title from content (Name field or first available field)
+      const title = content.Name || content.Title || content.Product || `Source ${index + 1}`;
+      
+      // Extract description from content (Description field or truncated content)
+      const description = content.Description || 
+                         Object.values(content).find(val => typeof val === 'string' && val.length > 20) || 
+                         'No description available';
+      
+      // Extract and construct URL
+      let url = '';
+      if (metadata['Product URL']) {
+        url = `https://circuitboardmedics.com${metadata['Product URL']}`;
+      } else if (content.URL || content.url) {
+        url = content.URL || content.url;
+        // Add domain if it's a relative URL
+        if (url.startsWith('/')) {
+          url = `https://circuitboardmedics.com${url}`;
+        }
+      }
+      
+      return {
+        id: result.id || `source-${index}`,
+        title: typeof title === 'string' ? title : String(title),
+        description: typeof description === 'string' ? description.substring(0, 150) + '...' : 'No description available',
+        url,
+        metadata
+      };
+    });
+  };
+
+  const scrollToBottom = () => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages, isLoading]);
+
   return (
     <div className="min-h-screen bg-gradient-subtle">
       {/* Header */}
@@ -413,10 +499,10 @@ const SearchInterface = () => {
         </div>
       </header>
 
-      <div className="max-w-6xl mx-auto px-6 py-8">
-        {/* Configuration Panel */}
-        {showConfig && (
-          <Card className="mb-8 shadow-card">
+      {/* Configuration Panel */}
+      {showConfig && (
+        <div className="max-w-6xl mx-auto px-6 py-4">
+          <Card className="shadow-card">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Settings className="w-5 h-5" />
@@ -530,129 +616,188 @@ const SearchInterface = () => {
               </div>
             </CardContent>
           </Card>
-        )}
+        </div>
+      )}
 
-        {/* Search Input */}
-        <Card className="mb-8 shadow-card">
-          <CardContent className="p-6">
-            <div className="flex space-x-4">
+      {/* Chat Interface */}
+      <div className="flex h-[calc(100vh-80px)]">
+        {/* Chat Area - Left Side */}
+        <div className="flex-1 flex flex-col">
+          {/* Chat Messages */}
+          <ScrollArea className="flex-1 px-6">
+            <div className="max-w-4xl mx-auto py-6 space-y-6">
+              {isLoadingConfig ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="text-center">
+                    <Loader2 className="w-8 h-8 text-primary animate-spin mx-auto mb-4" />
+                    <p className="text-muted-foreground">Loading configuration...</p>
+                  </div>
+                </div>
+              ) : messages.length === 0 ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="text-center max-w-md">
+                    <MessageSquare className="w-12 h-12 text-primary mx-auto mb-4" />
+                    <h3 className="text-lg font-semibold mb-2">Ready to Search</h3>
+                    <p className="text-muted-foreground">
+                      {config.upstashUrl && config.upstashToken && config.openaiApiKey && config.searchIndex
+                        ? "Ask any question and I'll search the database for relevant information."
+                        : "Configure your API credentials to get started."
+                      }
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {messages.map((message, index) => (
+                    <div key={message.id} className="space-y-4">
+                      {/* User Message */}
+                      <div className="flex justify-end">
+                        <div className="max-w-[80%] bg-primary text-primary-foreground rounded-2xl rounded-br-md px-4 py-3">
+                          <div className="flex items-center gap-2 mb-1">
+                            <User className="w-4 h-4" />
+                            <span className="text-sm opacity-90">
+                              {message.timestamp.toLocaleTimeString()}
+                            </span>
+                          </div>
+                          <p className="text-sm">{message.query}</p>
+                        </div>
+                      </div>
+
+                      {/* AI Response */}
+                      <div className="flex justify-start">
+                        <div className="max-w-[80%] bg-card border rounded-2xl rounded-bl-md px-4 py-3">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                              <Bot className="w-4 h-4 text-primary" />
+                              <span className="text-sm text-muted-foreground">AI Assistant</span>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 w-6 p-0"
+                              onClick={() => copyToClipboard(message.response)}
+                            >
+                              <Copy className="w-3 h-3" />
+                            </Button>
+                          </div>
+                          <div className="prose prose-sm max-w-none">
+                            <p className="whitespace-pre-wrap text-foreground leading-relaxed">
+                              {message.response}
+                            </p>
+                          </div>
+                          {message.searchResults && message.searchResults.length > 0 && (
+                            <div className="mt-3 pt-3 border-t text-xs text-muted-foreground">
+                              Based on {message.searchResults.length} search results
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  
+                  {/* Loading indicator */}
+                  {isLoading && (
+                    <div className="flex justify-start">
+                      <div className="bg-card border rounded-2xl rounded-bl-md px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <Bot className="w-4 h-4 text-primary" />
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span className="text-sm text-muted-foreground">Searching and thinking...</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  
+                  <div ref={chatEndRef} />
+                </>
+              )}
+            </div>
+          </ScrollArea>
+
+          {/* Chat Input - Bottom */}
+          <div className="border-t bg-background p-6">
+            <div className="max-w-4xl mx-auto flex gap-3">
               <div className="flex-1">
                 <Input
-                  placeholder="Enter your search query or question..."
+                  placeholder="Ask a question..."
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   onKeyPress={handleKeyPress}
                   disabled={isLoading}
-                  className="text-lg py-3"
+                  className="h-12 text-base"
                 />
               </div>
               <Button 
                 onClick={handleSearch}
                 disabled={isLoading || !query.trim()}
-                variant="premium"
                 size="lg"
-                className="gap-2 px-8"
+                className="h-12 px-6 gap-2"
               >
                 {isLoading ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (
-                  <Search className="w-4 h-4" />
+                  <Send className="w-4 h-4" />
                 )}
-                Search
+                Send
               </Button>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
-        {/* Messages */}
-        <div className="space-y-6">
-          {isLoadingConfig ? (
-            <Card className="text-center py-12 shadow-card">
-              <CardContent>
-                <div className="w-16 h-16 bg-primary-light rounded-full flex items-center justify-center mx-auto mb-4">
-                  <Loader2 className="w-8 h-8 text-primary animate-spin" />
+        {/* Sources Panel - Right Side */}
+        <div className="w-80 border-l bg-muted/30">
+          <div className="p-4 border-b">
+            <h3 className="font-semibold flex items-center gap-2">
+              <ExternalLink className="w-4 h-4" />
+              Sources
+            </h3>
+          </div>
+          <ScrollArea className="h-full">
+            <div className="p-4 space-y-4">
+              {activeSources.length === 0 ? (
+                <div className="text-center py-8">
+                  <Database className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
+                  <p className="text-sm text-muted-foreground">
+                    Sources will appear here after you search
+                  </p>
                 </div>
-                <h3 className="text-lg font-semibold mb-2">Loading Configuration</h3>
-                <p className="text-muted-foreground max-w-md mx-auto">
-                  Retrieving your saved settings...
-                </p>
-              </CardContent>
-            </Card>
-          ) : messages.length === 0 ? (
-            <Card className="text-center py-12 shadow-card">
-              <CardContent>
-                <div className="w-16 h-16 bg-primary-light rounded-full flex items-center justify-center mx-auto mb-4">
-                  <MessageSquare className="w-8 h-8 text-primary" />
-                </div>
-                <h3 className="text-lg font-semibold mb-2">Ready to Search</h3>
-                <p className="text-muted-foreground max-w-md mx-auto">
-                  {config.upstashUrl && config.upstashToken && config.openaiApiKey && config.searchIndex
-                    ? `Enter a query above to search your Upstash database and get AI-powered responses using ${config.openaiModel}.`
-                    : "Configure your Upstash Search and OpenAI credentials to get started."
-                  }
-                </p>
-              </CardContent>
-            </Card>
-          ) : (
-            messages.map((message) => (
-              <Card key={message.id} className="shadow-card">
-                <CardHeader className="pb-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Badge variant="outline" className="gap-1">
-                        <Search className="w-3 h-3" />
-                        Query
-                      </Badge>
-                      <span className="text-sm text-muted-foreground">
-                        {message.timestamp.toLocaleTimeString()}
-                      </span>
-                    </div>
-                    {message.searchResults && (
-                      <Badge className="gap-1">
-                        <Database className="w-3 h-3" />
-                        {message.searchResults.length} results
-                      </Badge>
-                    )}
-                  </div>
-                  <p className="font-medium text-foreground">{message.query}</p>
-                </CardHeader>
-                
-                <CardContent className="pt-0">
-                  <div className="flex items-start gap-2 mb-3">
-                    <Badge variant="secondary" className="gap-1">
-                      <Brain className="w-3 h-3" />
-                      AI Response
-                    </Badge>
-                  </div>
-                  <div className="prose prose-sm max-w-none">
-                    <p className="whitespace-pre-wrap text-foreground leading-relaxed">
-                      {message.response}
-                    </p>
-                  </div>
-                  
-                  {message.searchResults && message.searchResults.length > 0 && (
-                    <div className="mt-4 pt-4 border-t">
-                      <p className="text-sm font-medium text-muted-foreground mb-2">
-                        Based on {message.searchResults.length} search results
-                      </p>
-                      <div className="grid gap-2">
-                        {message.searchResults.slice(0, 3).map((result, idx) => (
-                          <div key={result.id} className="text-xs p-2 bg-muted rounded border-l-2 border-primary">
-                            <div className="font-mono text-muted-foreground">
-                              Score: {result.score.toFixed(3)}
-                            </div>
-                            <div className="truncate">
-                              {JSON.stringify(result.content).substring(0, 100)}...
-                            </div>
-                          </div>
-                        ))}
+              ) : (
+                activeSources.map((source, index) => (
+                  <Card key={source.id} className="p-3 hover:shadow-md transition-shadow">
+                    <div className="space-y-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <Badge variant="outline" className="text-xs">
+                          {index + 1}
+                        </Badge>
+                        {source.url && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 w-6 p-0"
+                            onClick={() => window.open(source.url, '_blank')}
+                          >
+                            <ExternalLink className="w-3 h-3" />
+                          </Button>
+                        )}
                       </div>
+                      <h4 className="font-medium text-sm leading-tight">
+                        {source.title}
+                      </h4>
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        {source.description}
+                      </p>
+                      {source.metadata && source.metadata['Retail Price'] && (
+                        <div className="text-xs">
+                          <span className="font-medium">Price: </span>
+                          <span className="text-green-600">${source.metadata['Retail Price']}</span>
+                        </div>
+                      )}
                     </div>
-                  )}
-                </CardContent>
-              </Card>
-            ))
-          )}
+                  </Card>
+                ))
+              )}
+            </div>
+          </ScrollArea>
         </div>
       </div>
     </div>
