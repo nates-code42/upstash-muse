@@ -375,7 +375,7 @@ const SearchInterface = () => {
         searchResults
       };
 
-      setMessages(prev => [newMessage, ...prev]);
+      setMessages(prev => [...prev, newMessage]);
       setActiveSources(processSearchResultsToSources(searchResults));
       setQuery('');
       
@@ -711,13 +711,6 @@ const SearchInterface = () => {
                               <div className="prose prose-sm max-w-none text-foreground">
                                 <p className="whitespace-pre-wrap leading-relaxed">{message.response}</p>
                               </div>
-                              {message.searchResults && message.searchResults.length > 0 && (
-                                <div className="mt-4 pt-3 border-t border-border/50">
-                                  <p className="text-xs text-muted-foreground">
-                                    Sources: {message.searchResults.map((_, idx) => `[${idx + 1}]`).join(' ')}
-                                  </p>
-                                </div>
-                              )}
                             </div>
                           </div>
                         </div>
