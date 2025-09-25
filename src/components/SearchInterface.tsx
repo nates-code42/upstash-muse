@@ -144,7 +144,24 @@ const SearchInterface = () => {
       }
     } catch (error) {
       console.error('Failed to load prompts:', error);
+      toast({
+        title: "Error Loading Prompts",
+        description: "Failed to load system prompts. Please refresh the page.",
+        variant: "destructive"
+      });
     }
+  };
+
+  // Callback for when prompts are updated in the PromptLibrary
+  const handlePromptsUpdated = async () => {
+    console.log('Refreshing prompts after library update...');
+    await loadPrompts();
+  };
+
+  // Enhanced prompt select handler
+  const handlePromptSelect = async (promptId: string) => {
+    setActivePromptId(promptId);
+    await loadPrompts(); // Refresh to ensure we have the latest data
   };
 
   const getActivePrompt = (): SystemPrompt | null => {
@@ -833,10 +850,8 @@ Please provide a comprehensive answer based on this information.`;
         redisGet={redisGet}
         redisSet={redisSet}
         activePromptId={activePromptId}
-        onPromptSelect={(promptId) => {
-          setActivePromptId(promptId);
-          loadPrompts(); // Reload prompts to reflect changes
-        }}
+        onPromptSelect={handlePromptSelect}
+        onPromptsUpdated={handlePromptsUpdated}
       />
 
       {/* Main Chat Container */}

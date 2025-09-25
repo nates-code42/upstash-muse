@@ -36,6 +36,7 @@ interface PromptLibraryProps {
   redisSet: (key: string, value: any) => Promise<any>;
   activePromptId?: string;
   onPromptSelect: (promptId: string) => void;
+  onPromptsUpdated: () => Promise<void>;
 }
 
 export const PromptLibrary: React.FC<PromptLibraryProps> = ({
@@ -44,7 +45,8 @@ export const PromptLibrary: React.FC<PromptLibraryProps> = ({
   redisGet,
   redisSet,
   activePromptId,
-  onPromptSelect
+  onPromptSelect,
+  onPromptsUpdated
 }) => {
   const [prompts, setPrompts] = useState<SystemPrompt[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -86,6 +88,8 @@ export const PromptLibrary: React.FC<PromptLibraryProps> = ({
     try {
       await redisSet('system-prompts', updatedPrompts);
       setPrompts(updatedPrompts);
+      // Notify parent component to refresh its prompts
+      await onPromptsUpdated();
     } catch (error) {
       console.error('Failed to save prompts:', error);
       throw error;
@@ -225,6 +229,7 @@ export const PromptLibrary: React.FC<PromptLibraryProps> = ({
         description: "Prompt selected"
       });
     } catch (error) {
+      console.error('Failed to select prompt:', error);
       toast({
         title: "Error",
         description: "Failed to select prompt",
