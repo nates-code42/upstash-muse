@@ -2,7 +2,6 @@ import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { UpstashRedis } from '../shared/upstash.ts';
 import { UpstashSearch } from '../shared/upstash.ts';
-import { validateApiKey, recordApiUsage } from '../shared/auth.ts';
 import { smartParse } from '../shared/upstash.ts';
 import { OpenAIClient, processSearchResultsToSources } from '../shared/openai.ts';
 import { ChatSearchRequest, SystemPrompt } from '../shared/types.ts';
@@ -42,26 +41,8 @@ serve(async (req) => {
       });
     }
 
-    // Validate API key
-    const authHeader = req.headers.get('authorization');
-    if (!authHeader?.startsWith('Bearer ')) {
-      return new Response(JSON.stringify({ error: 'API key required' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    const apiKey = authHeader.slice(7);
-    const validation = await validateApiKey(apiKey, 'chat-search-stream');
-    
-    if (!validation.valid || (validation.validation && validation.validation.rate_limit_exceeded)) {
-      return new Response(JSON.stringify({ 
-        error: validation.validation?.rate_limit_exceeded ? 'Rate limit exceeded' : 'Invalid API key' 
-      }), {
-        status: validation.validation?.rate_limit_exceeded ? 429 : 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
+    // For internal usage, we skip API key validation and use the OpenAI key from Redis
+    // This matches the behavior of the original chat-search function
 
     // Create streaming response
     const stream = new ReadableStream({
@@ -155,10 +136,7 @@ serve(async (req) => {
             }
           }
 
-          // Record API usage
-          if (validation.validation?.key_id) {
-            await recordApiUsage(validation.validation.key_id, 'chat-search-stream');
-          }
+          // No API usage recording needed for internal usage
 
           console.log('✅ Streaming response completed');
           controller.close();
