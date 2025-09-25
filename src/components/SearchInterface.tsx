@@ -7,7 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Search, Settings, MessageSquare, Loader2, Database, Brain, Send, Copy, ExternalLink, Bot, User, BookOpen, FileText } from 'lucide-react';
+import { Search, Settings, MessageSquare, Loader2, Database, Brain, Send, Copy, ExternalLink, Bot, User, BookOpen, FileText, Type } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { Search as UpstashSearch } from '@upstash/search';
 import { parseMarkdownLinks } from '@/lib/utils';
@@ -236,32 +236,6 @@ const SearchInterface = () => {
     return prompts.find(p => p.id === activePromptId) || null;
   };
 
-  const migrateExistingPrompt = async (existingSystemPrompt: string) => {
-    // Create a default prompt from existing system prompt
-    const defaultPrompt: SystemPrompt = {
-      id: 'default_migrated',
-      name: 'Default Assistant',
-      description: 'Migrated from previous configuration',
-      content: existingSystemPrompt,
-      isDefault: true,
-      createdAt: new Date(),
-      updatedAt: new Date()
-    };
-
-    try {
-      await redisSet('system-prompts', [defaultPrompt]);
-      await redisSet('active-prompt-id', defaultPrompt.id);
-      setPrompts([defaultPrompt]);
-      setActivePromptId(defaultPrompt.id);
-      
-      console.log('Migrated existing system prompt to library');
-      return true;
-    } catch (error) {
-      console.error('Failed to migrate existing prompt:', error);
-      return false;
-    }
-  };
-
   const loadConfigFromRedis = async () => {
     try {
       setIsLoadingConfig(true);
@@ -272,7 +246,6 @@ const SearchInterface = () => {
       
       if (raw) {
         let parsedConfig: any = raw;
-        let wasDoubleEncoded = false;
         
         // Parse JSON if needed (handles possible double-encoding)
         if (typeof parsedConfig === 'string') {
@@ -280,7 +253,6 @@ const SearchInterface = () => {
             parsedConfig = JSON.parse(parsedConfig);
             if (typeof parsedConfig === 'string') {
               parsedConfig = JSON.parse(parsedConfig);
-              wasDoubleEncoded = true;
             }
           } catch (parseError) {
             console.error('Failed to parse config JSON:', parseError);
@@ -305,48 +277,8 @@ const SearchInterface = () => {
           return;
         }
         
-        // Handle migration from old config with systemPrompt
-        if (parsedConfig.systemPrompt && prompts.length === 0) {
-          console.log('Migrating existing system prompt to library...');
-          await migrateExistingPrompt(parsedConfig.systemPrompt);
-          
-          // Remove systemPrompt from config and save updated config
-          const { systemPrompt, ...configWithoutPrompt } = parsedConfig;
-          await redisSet('search-assistant-config', configWithoutPrompt);
-          parsedConfig = configWithoutPrompt;
-        }
-        
-        // Validate critical fields (excluding system prompt now)
-        const requiredFields = ['upstashUrl', 'upstashToken', 'openaiApiKey', 'searchIndex'];
-        const missingFields = requiredFields.filter((field) => !parsedConfig[field]);
-        
-        if (missingFields.length > 0) {
-          console.warn('Missing configuration fields:', missingFields);
-          toast({
-            title: "Incomplete Configuration",
-            description: `Missing: ${missingFields.join(', ')}. Please complete your setup.`,
-            variant: "destructive"
-          });
-          setShowConfig(true);
-          return; // Don't proceed with incomplete config
-        }
-        
-        // Use config directly from Redis - no fallbacks to defaults
+        // Use config directly from Redis
         setConfig(parsedConfig);
-        
-        console.log('Config updated from Redis:');
-        console.log('- All config fields present:', requiredFields.every(field => parsedConfig[field]));
-        
-        // If we detected double-encoding, normalize by re-saving once
-        if (wasDoubleEncoded) {
-          try {
-            await redisSet('search-assistant-config', parsedConfig);
-            console.log('Normalized double-encoded configuration in Redis');
-          } catch (e) {
-            console.warn('Failed to normalize saved config:', e);
-          }
-        }
-        
         console.log('Successfully loaded and validated config:', parsedConfig);
         
       } else {
@@ -373,8 +305,8 @@ const SearchInterface = () => {
 
   const saveConfigToRedis = async () => {
     try {
-      // Validate configuration before saving (excluding system prompt)
-      const requiredFields = ['upstashUrl', 'upstashToken', 'openaiApiKey', 'searchIndex'];
+      // Validate configuration before saving
+      const requiredFields = ['openaiApiKey'];
       const missingFields = requiredFields.filter(field => !config[field as keyof typeof config]);
       
       if (missingFields.length > 0) {
@@ -499,199 +431,6 @@ const SearchInterface = () => {
       setStreamingContent('');
     }
   };
-    
-    try {
-      let searchResults: SearchResult[] = [];
-      
-      // Use the correct Upstash Search SDK pattern: client.index("name").search()
-      try {
-        const client = new UpstashSearch({
-          url: config.upstashUrl,
-          token: config.upstashToken,
-        });
-
-        const index = client.index(config.searchIndex);
-        const searchResponse = await index.search({
-          query: query,
-          limit: 100, // Retrieve up to 100 results for better coverage
-        });
-
-        const allResults = searchResponse || [];
-        
-        // Debug: Log initial retrieval stats
-        console.log('=== Search Result Filtering Debug ===');
-        console.log('Total results received from Upstash:', allResults.length);
-        if (allResults.length > 0) {
-          const scores = allResults.map(r => r.score || 0);
-          console.log('Score range:', { min: Math.min(...scores), max: Math.max(...scores) });
-        }
-        
-        // Filter to top 10 results by relevance score (descending)
-        searchResults = allResults
-          .sort((a, b) => (b.score || 0) - (a.score || 0))
-          .slice(0, 10);
-        
-        console.log('Top 10 results selected for AI context:', searchResults.length);
-        if (searchResults.length > 0) {
-          const topScores = searchResults.map(r => r.score || 0);
-          console.log('Top 10 score range:', { min: Math.min(...topScores), max: Math.max(...topScores) });
-        }
-        console.log('Results filtered out:', allResults.length - searchResults.length);
-        
-      } catch (searchError) {
-        console.error('Upstash Search error:', searchError);
-        throw new Error(`Upstash Search failed: ${searchError instanceof Error ? searchError.message : 'Unknown error'}`);
-      }
-
-      // Step 2: Generate OpenAI response with ALL search result data
-      const formattedResults = searchResults.map((result, index) => {
-        // Include ALL fields from the search result
-        const content = result.content || {};
-        const metadata = result.metadata || {};
-        
-        // Format all content fields, ensuring URLs are full
-        const contentFields = Object.entries(content)
-          .map(([key, value]) => {
-            // If this looks like a URL field, ensure it's a full URL
-            if (typeof value === 'string' && (key.toLowerCase().includes('url') || value.startsWith('/'))) {
-              const fullUrl = value.startsWith('/') ? `https://circuitboardmedics.com${value}` : value;
-              return `${key}: ${fullUrl}`;
-            }
-            return `${key}: ${value}`;
-          })
-          .join('\n');
-        
-        // Format all metadata fields, ensuring URLs are full
-        const metadataFields = Object.keys(metadata).length > 0 
-          ? '\nMetadata:\n' + Object.entries(metadata)
-              .map(([key, value]) => {
-                // If this looks like a URL field, ensure it's a full URL
-                if (typeof value === 'string' && (key.toLowerCase().includes('url') || value.startsWith('/'))) {
-                  const fullUrl = value.startsWith('/') ? `https://circuitboardmedics.com${value}` : value;
-                  return `${key}: ${fullUrl}`;
-                }
-                return `${key}: ${value}`;
-              })
-              .join('\n')
-          : '';
-        
-        return `Result ${index + 1} (ID: ${result.id}, Score: ${result.score?.toFixed(2) || 'N/A'}):\n${contentFields}${metadataFields}`;
-      }).join('\n\n');
-
-      const contextText = formattedResults;
-
-      // Format the user message with query wrapper
-      const formatUserMessage = (query: string, contextText: string): string => {
-        return `Question: ${query}
-
-Relevant content from the website:
-${contextText}
-
-Please provide a comprehensive answer based on this information.`;
-      };
-
-      const formattedUserMessage = formatUserMessage(query, contextText);
-
-      // Debug: Log the system prompt and formatted message being used
-      console.log('=== OpenAI Request Debug ===');
-      console.log('System prompt being sent to OpenAI:');
-      console.log('Length:', activePrompt.content.length);
-      console.log('First 200 chars:', activePrompt.content.substring(0, 200));
-      console.log('Is Circuit Board Medics prompt?:', activePrompt.content.includes('Circuit Board Medics'));
-      console.log('Formatted user message preview:', formattedUserMessage.substring(0, 300) + '...');
-
-      // Use max_completion_tokens for newer models, max_tokens for older ones
-      const isNewerModel = config.openaiModel === 'gpt-5-mini' || config.openaiModel === 'gpt-4.1-mini';
-      const requestBody: any = {
-        model: config.openaiModel,
-        messages: [
-          {
-            role: 'system',
-            content: activePrompt.content
-          },
-          {
-            role: 'user',
-            content: formattedUserMessage
-          }
-        ]
-      };
-      
-      // Add the appropriate token limit parameter based on model
-      if (isNewerModel) {
-        requestBody.max_completion_tokens = 4000;
-        // Newer models only support default temperature (1)
-      } else {
-        requestBody.max_tokens = 4000;
-        requestBody.temperature = 0.7;
-      }
-
-      const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${config.openaiApiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestBody)
-      });
-
-      if (!openaiResponse.ok) {
-        const errorData = await openaiResponse.json().catch(() => ({}));
-        const errorMessage = errorData.error?.message || `HTTP ${openaiResponse.status}: ${openaiResponse.statusText}`;
-        throw new Error(`OpenAI API Error: ${errorMessage}`);
-      }
-
-      const openaiData = await openaiResponse.json();
-      
-      if (!openaiData.choices || !openaiData.choices[0]?.message?.content) {
-        throw new Error('Invalid response format from OpenAI API');
-      }
-      
-      const aiResponse = openaiData.choices[0].message.content;
-
-      // Add to messages
-      const newMessage: Message = {
-        id: Date.now().toString(),
-        query,
-        response: aiResponse,
-        timestamp: new Date(),
-        searchResults
-      };
-
-      setMessages(prev => [...prev, newMessage]);
-      setActiveSources(processSearchResultsToSources(searchResults));
-      setQuery('');
-      
-
-    } catch (error) {
-      console.error('Search error:', error);
-      let errorMessage = "An unexpected error occurred";
-      
-      if (error instanceof Error) {
-        errorMessage = error.message;
-        
-        // Provide more specific guidance based on error type
-        if (errorMessage.includes('OpenAI API Error')) {
-          if (errorMessage.includes('insufficient_quota')) {
-            errorMessage = 'OpenAI API quota exceeded. Please check your billing and usage limits.';
-          } else if (errorMessage.includes('invalid_api_key')) {
-            errorMessage = 'Invalid OpenAI API key. Please check your configuration.';
-          } else if (errorMessage.includes('context_length_exceeded')) {
-            errorMessage = 'Context too long for the model. Try a shorter query or fewer search results.';
-          }
-        } else if (errorMessage.includes('Upstash Search failed')) {
-          errorMessage = 'Search service error. Please verify your Upstash configuration.';
-        }
-      }
-      
-      toast({
-        title: "Search failed",
-        description: errorMessage,
-        variant: "destructive"
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -723,80 +462,42 @@ Please provide a comprehensive answer based on this information.`;
     }
   };
 
-  const processSearchResultsToSources = (searchResults: SearchResult[]): Source[] => {
-    return searchResults.map((result, index) => {
-      const metadata = result.metadata || {};
-      const content = result.content || {};
-      
-      // Extract title from content (Name field or first available field)
-      const title = content.Name || content.Title || content.Product || `Source ${index + 1}`;
-      
-      // Extract description from content (Description field or truncated content)
-      const description = content.Description || 
-                         Object.values(content).find(val => typeof val === 'string' && val.length > 20) || 
-                         'No description available';
-      
-      // Extract and construct URL
-      let url = '';
-      if (metadata['Product URL']) {
-        url = `https://circuitboardmedics.com${metadata['Product URL']}`;
-      } else if (content.URL || content.url) {
-        url = content.URL || content.url;
-        // Add domain if it's a relative URL
-        if (url.startsWith('/')) {
-          url = `https://circuitboardmedics.com${url}`;
-        }
-      }
-      
-      return {
-        id: result.id || `source-${index}`,
-        title: typeof title === 'string' ? title : String(title),
-        description: typeof description === 'string' ? description.substring(0, 150) + '...' : 'No description available',
-        url,
-        metadata
-      };
-    });
-  };
-
-  const scrollToBottom = () => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
-
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages, isLoading]);
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20">
+    <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
       {/* Header */}
-      <header className="bg-background/95 backdrop-blur-sm border-b border-border/40 px-6 py-4 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto flex justify-between items-center">
-          <img src={logoImage} alt="Circuit Board Medics" className="h-8" />
-          <div className="flex items-center space-x-3">
-            <Button
-              variant="ghost"
-              onClick={() => setShowPromptLibrary(true)}
-              className="text-muted-foreground hover:text-foreground"
-            >
-              <BookOpen className="h-4 w-4 mr-2" />
-              Prompt Library
-            </Button>
-            <Button
-              variant="ghost"
-              onClick={() => setShowConfig(!showConfig)}
-              className="text-muted-foreground hover:text-foreground"
-            >
-              <Settings className="h-4 w-4 mr-2" />
-              Configure
-            </Button>
-            <Button
-              variant="ghost"
-              onClick={() => window.open('/docs', '_blank')}
-              className="text-muted-foreground hover:text-foreground"
-            >
-              <FileText className="h-4 w-4 mr-2" />
-              Docs
-            </Button>
+      <header className="border-b border-border/40 bg-background/80 backdrop-blur-sm sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-4">
+              <img 
+                src={logoImage} 
+                alt="Circuit Board Medics" 
+                className="h-10 w-auto"
+              />
+              <div>
+                <h1 className="text-xl font-bold text-foreground">AI Search Assistant</h1>
+                <p className="text-sm text-muted-foreground">Powered by Circuit Board Medics</p>
+              </div>
+            </div>
+            <div className="flex items-center space-x-3">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowPromptLibrary(true)}
+                className="hidden sm:flex"
+              >
+                <BookOpen className="h-4 w-4 mr-2" />
+                Prompt Library
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowConfig(!showConfig)}
+              >
+                <Settings className="h-4 w-4 mr-2" />
+                Settings
+              </Button>
+            </div>
           </div>
         </div>
       </header>
@@ -806,30 +507,6 @@ Please provide a comprehensive answer based on this information.`;
         <div className="bg-background/95 backdrop-blur-sm border-b border-border/40 px-6 py-6">
           <div className="max-w-7xl mx-auto">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground">
-                  Upstash Search URL
-                </label>
-                <input
-                  type="text"
-                  value={config.upstashUrl}
-                  onChange={(e) => setConfig(prev => ({ ...prev, upstashUrl: e.target.value }))}
-                  className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
-                  placeholder="https://your-search-endpoint.upstash.io"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground">
-                  Upstash Token
-                </label>
-                <input
-                  type="password"
-                  value={config.upstashToken}
-                  onChange={(e) => setConfig(prev => ({ ...prev, upstashToken: e.target.value }))}
-                  className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
-                  placeholder="Your Upstash token"
-                />
-              </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium text-foreground">
                   OpenAI API Key
@@ -957,7 +634,7 @@ Please provide a comprehensive answer based on this information.`;
                       <p className="text-muted-foreground">Loading configuration...</p>
                     </div>
                   </div>
-                ) : messages.length === 0 ? (
+                ) : messages.length === 0 && !isLoading && !isStreaming ? (
                   <div className="flex items-center justify-center h-full">
                     <div className="text-center py-16">
                       <div className="w-16 h-16 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center">
@@ -969,20 +646,12 @@ Please provide a comprehensive answer based on this information.`;
                       <p className="text-muted-foreground max-w-md mx-auto">
                         Ask any question about our products and I'll search through our database to give you the best answer.
                       </p>
-                      <div className="mt-6 flex flex-wrap justify-center gap-2">
-                        <button 
-                          onClick={() => setQuery("What FICM parts do you have for Ford?")}
-                          className="px-4 py-2 text-sm bg-muted/50 hover:bg-muted text-muted-foreground hover:text-foreground rounded-full transition-colors"
-                        >
-                          FICM parts for Ford
-                        </button>
-                        <button 
-                          onClick={() => setQuery("Show me repair services")}
-                          className="px-4 py-2 text-sm bg-muted/50 hover:bg-muted text-muted-foreground hover:text-foreground rounded-full transition-colors"
-                        >
-                          Repair services
-                        </button>
-                      </div>
+                    </div>
+                  </div>
+                ) : (isLoading && messages.length === 0) || isStreaming ? (
+                  <div className="flex items-center justify-center h-full">
+                    <div className="py-16">
+                      <StreamingLoader isFirstMessage={messages.length === 0} />
                     </div>
                   </div>
                 ) : (
@@ -1027,21 +696,41 @@ Please provide a comprehensive answer based on this information.`;
                         </div>
                       </div>
                     ))}
+
+                    {/* Show streaming content */}
+                    {isStreaming && streamingContent && (
+                      <div className="space-y-4">
+                        <div className="flex justify-start items-start space-x-3">
+                          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center flex-shrink-0 mt-1">
+                            <Bot className="h-4 w-4 text-primary" />
+                          </div>
+                          <div className="flex-1 max-w-3xl">
+                            <div className="bg-muted/50 rounded-2xl rounded-tl-md px-6 py-4 shadow-sm">
+                              <div className="flex justify-between items-start mb-3">
+                                <span className="text-xs font-medium text-muted-foreground">AI Assistant</span>
+                              </div>
+                              <div className="prose prose-sm max-w-none text-foreground">
+                                <div 
+                                  className="whitespace-pre-wrap leading-relaxed"
+                                  dangerouslySetInnerHTML={{ 
+                                    __html: parseMarkdownLinks(streamingContent) 
+                                  }}
+                                />
+                                <span className="animate-pulse text-primary">|</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                     
-                    {isLoading && (
+                    {isLoading && !isStreaming && (
                       <div className="flex justify-start items-start space-x-3">
                         <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center flex-shrink-0 mt-1">
                           <Bot className="h-4 w-4 text-primary" />
                         </div>
                         <div className="bg-muted/50 rounded-2xl rounded-tl-md px-6 py-4 shadow-sm">
-                          <div className="flex items-center space-x-2">
-                            <div className="flex space-x-1">
-                              <div className="w-2 h-2 bg-muted-foreground/40 rounded-full animate-bounce"></div>
-                              <div className="w-2 h-2 bg-muted-foreground/40 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
-                              <div className="w-2 h-2 bg-muted-foreground/40 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
-                            </div>
-                            <span className="text-sm text-muted-foreground">Searching...</span>
-                          </div>
+                          <StreamingLoader />
                         </div>
                       </div>
                     )}
@@ -1061,11 +750,11 @@ Please provide a comprehensive answer based on this information.`;
                   onKeyPress={handleKeyPress}
                   placeholder="Ask me anything..."
                   className="w-full px-6 py-4 bg-background border border-border rounded-2xl shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all duration-200 text-lg placeholder:text-muted-foreground resize-none min-h-[60px] max-h-[200px]"
-                  disabled={isLoading}
+                  disabled={isLoading || isStreaming}
                 />
                 <Button
                   onClick={handleSearch}
-                  disabled={isLoading || !query.trim()}
+                  disabled={isLoading || isStreaming || !query.trim()}
                   className="absolute right-2 top-2 rounded-xl px-6 shadow-sm"
                 >
                   <Send className="h-4 w-4" />
