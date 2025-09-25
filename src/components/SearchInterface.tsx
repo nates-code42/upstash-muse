@@ -42,6 +42,7 @@ const SearchInterface = () => {
   const [query, setQuery] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isFirstMessage, setIsFirstMessage] = useState(true);
   const [showConfig, setShowConfig] = useState(false);
   const [showPromptLibrary, setShowPromptLibrary] = useState(false);
   const [isLoadingConfig, setIsLoadingConfig] = useState(true);
@@ -625,6 +626,11 @@ Please provide a comprehensive answer based on this information.`;
       setActiveSources(processSearchResultsToSources(searchResults));
       setQuery('');
       
+      // Mark that the first message has been completed
+      if (isFirstMessage) {
+        setIsFirstMessage(false);
+      }
+      
 
     } catch (error) {
       console.error('Search error:', error);
@@ -1004,7 +1010,9 @@ Please provide a comprehensive answer based on this information.`;
                               <div className="w-2 h-2 bg-muted-foreground/40 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
                               <div className="w-2 h-2 bg-muted-foreground/40 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
                             </div>
-                            <span className="text-sm text-muted-foreground">Searching...</span>
+                            <span className="text-sm text-muted-foreground">
+                              {isFirstMessage ? "Ready to help" : "Searching..."}
+                            </span>
                           </div>
                         </div>
                       </div>
