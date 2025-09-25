@@ -317,12 +317,25 @@ const SearchInterface = () => {
 
       const contextText = formattedResults;
 
-      // Debug: Log the system prompt being used
+      // Format the user message with query wrapper
+      const formatUserMessage = (query: string, contextText: string): string => {
+        return `Question: ${query}
+
+Relevant content from the website:
+${contextText}
+
+Please provide a comprehensive answer based on this information.`;
+      };
+
+      const formattedUserMessage = formatUserMessage(query, contextText);
+
+      // Debug: Log the system prompt and formatted message being used
       console.log('=== OpenAI Request Debug ===');
       console.log('System prompt being sent to OpenAI:');
       console.log('Length:', config.systemPrompt.length);
       console.log('First 200 chars:', config.systemPrompt.substring(0, 200));
       console.log('Is Circuit Board Medics prompt?:', config.systemPrompt.includes('Circuit Board Medics'));
+      console.log('Formatted user message preview:', formattedUserMessage.substring(0, 300) + '...');
 
       const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
@@ -335,11 +348,11 @@ const SearchInterface = () => {
           messages: [
             {
               role: 'system',
-              content: `${config.systemPrompt}\n\nSearch Results:\n${contextText}`
+              content: config.systemPrompt
             },
             {
               role: 'user',
-              content: query
+              content: formattedUserMessage
             }
           ],
           max_tokens: 4000,
