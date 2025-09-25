@@ -6,11 +6,13 @@ import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Search, Settings, MessageSquare, Loader2, Database, Brain, Send, Copy, ExternalLink, Bot, User } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Search, Settings, MessageSquare, Loader2, Database, Brain, Send, Copy, ExternalLink, Bot, User, BookOpen } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { Search as UpstashSearch } from '@upstash/search';
 import { parseMarkdownLinks } from '@/lib/utils';
 import logoImage from '@/assets/circuit-board-medics-logo.png';
+import { PromptLibrary, type SystemPrompt } from './PromptLibrary';
 
 interface SearchResult {
   id: string;
@@ -40,8 +42,11 @@ const SearchInterface = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [showConfig, setShowConfig] = useState(false);
+  const [showPromptLibrary, setShowPromptLibrary] = useState(false);
   const [isLoadingConfig, setIsLoadingConfig] = useState(true);
   const [activeSources, setActiveSources] = useState<Source[]>([]);
+  const [prompts, setPrompts] = useState<SystemPrompt[]>([]);
+  const [activePromptId, setActivePromptId] = useState<string>('');
   const chatEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   
@@ -57,13 +62,13 @@ const SearchInterface = () => {
     upstashToken: '',
     openaiApiKey: '',
     openaiModel: 'gpt-4o',
-    systemPrompt: '', // No default - must come from Redis
     searchIndex: 'CBM Products1'
   });
 
-  // Load configuration from Redis on component mount
+  // Load configuration and prompts from Redis on component mount
   useEffect(() => {
     loadConfigFromRedis();
+    loadPrompts();
   }, []);
 
   // Auto-resize textarea
@@ -99,7 +104,56 @@ const SearchInterface = () => {
     }
   };
 
-  const redisSet = async (key: string, value: any) => {
+  const loadPrompts = async () => {
+    try {
+      const storedPrompts = await redisGet('system-prompts');
+      if (storedPrompts && Array.isArray(storedPrompts)) {
+        setPrompts(storedPrompts);
+        
+        // Load active prompt ID
+        const activeId = await redisGet('active-prompt-id');
+        if (activeId && storedPrompts.some(p => p.id === activeId)) {
+          setActivePromptId(activeId);
+        } else if (storedPrompts.length > 0) {
+          // Set first prompt as active if no active ID found
+          setActivePromptId(storedPrompts[0].id);
+          await redisSet('active-prompt-id', storedPrompts[0].id);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load prompts:', error);
+    }
+  };
+
+  const getActivePrompt = (): SystemPrompt | null => {
+    return prompts.find(p => p.id === activePromptId) || null;
+  };
+
+  const migrateExistingPrompt = async (existingSystemPrompt: string) => {
+    // Create a default prompt from existing system prompt
+    const defaultPrompt: SystemPrompt = {
+      id: 'default_migrated',
+      name: 'Default Assistant',
+      description: 'Migrated from previous configuration',
+      content: existingSystemPrompt,
+      isDefault: true,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+
+    try {
+      await redisSet('system-prompts', [defaultPrompt]);
+      await redisSet('active-prompt-id', defaultPrompt.id);
+      setPrompts([defaultPrompt]);
+      setActivePromptId(defaultPrompt.id);
+      
+      console.log('Migrated existing system prompt to library');
+      return true;
+    } catch (error) {
+      console.error('Failed to migrate existing prompt:', error);
+      return false;
+    }
+  };
     try {
       const response = await fetch(`${redisConfig.url}/set/${encodeURIComponent(key)}`, {
         method: 'POST',
@@ -164,8 +218,19 @@ const SearchInterface = () => {
           return;
         }
         
-        // Validate critical fields including system prompt
-        const requiredFields = ['upstashUrl', 'upstashToken', 'openaiApiKey', 'searchIndex', 'systemPrompt'];
+        // Handle migration from old config with systemPrompt
+        if (parsedConfig.systemPrompt && prompts.length === 0) {
+          console.log('Migrating existing system prompt to library...');
+          await migrateExistingPrompt(parsedConfig.systemPrompt);
+          
+          // Remove systemPrompt from config and save updated config
+          const { systemPrompt, ...configWithoutPrompt } = parsedConfig;
+          await redisSet('search-assistant-config', configWithoutPrompt);
+          parsedConfig = configWithoutPrompt;
+        }
+        
+        // Validate critical fields (excluding system prompt now)
+        const requiredFields = ['upstashUrl', 'upstashToken', 'openaiApiKey', 'searchIndex'];
         const missingFields = requiredFields.filter((field) => !parsedConfig[field]);
         
         if (missingFields.length > 0) {
@@ -183,9 +248,6 @@ const SearchInterface = () => {
         setConfig(parsedConfig);
         
         console.log('Config updated from Redis:');
-        console.log('- System prompt loaded from Redis:', !!parsedConfig.systemPrompt);
-        console.log('- System prompt length:', parsedConfig.systemPrompt?.length || 0);
-        console.log('- System prompt preview:', parsedConfig.systemPrompt?.substring(0, 100) + '...');
         console.log('- All config fields present:', requiredFields.every(field => parsedConfig[field]));
         
         // If we detected double-encoding, normalize by re-saving once
@@ -228,8 +290,8 @@ const SearchInterface = () => {
 
   const saveConfigToRedis = async () => {
     try {
-      // Validate configuration before saving including system prompt
-      const requiredFields = ['upstashUrl', 'upstashToken', 'openaiApiKey', 'searchIndex', 'systemPrompt'];
+      // Validate configuration before saving (excluding system prompt)
+      const requiredFields = ['upstashUrl', 'upstashToken', 'openaiApiKey', 'searchIndex'];
       const missingFields = requiredFields.filter(field => !config[field as keyof typeof config]);
       
       if (missingFields.length > 0) {
@@ -238,6 +300,17 @@ const SearchInterface = () => {
           description: `Please fill in: ${missingFields.join(', ')}`,
           variant: "destructive"
         });
+        return;
+      }
+
+      // Check if we have at least one prompt
+      if (prompts.length === 0) {
+        toast({
+          title: "No System Prompt",
+          description: "Please create at least one system prompt in the Prompt Library",
+          variant: "destructive"
+        });
+        setShowPromptLibrary(true);
         return;
       }
       
@@ -272,13 +345,36 @@ const SearchInterface = () => {
       return;
     }
 
-    if (!config.upstashUrl || !config.upstashToken || !config.openaiApiKey || !config.searchIndex || !config.systemPrompt) {
+    if (!config.upstashUrl || !config.upstashToken || !config.openaiApiKey || !config.searchIndex) {
+      const activePrompt = getActivePrompt();
+      const missing = [];
+      if (!config.upstashUrl) missing.push('Upstash URL');
+      if (!config.upstashToken) missing.push('Upstash Token'); 
+      if (!config.openaiApiKey) missing.push('OpenAI API Key');
+      if (!config.searchIndex) missing.push('Search Index');
+      if (!activePrompt) missing.push('System Prompt');
+      
       toast({
         title: "Missing Configuration",
-        description: "Please configure all required fields including system prompt",
+        description: `Please configure: ${missing.join(', ')}`,
         variant: "destructive"
       });
-      setShowConfig(true);
+      if (!activePrompt) {
+        setShowPromptLibrary(true);
+      } else {
+        setShowConfig(true);
+      }
+      return;
+    }
+
+    const activePrompt = getActivePrompt();
+    if (!activePrompt) {
+      toast({
+        title: "No System Prompt",
+        description: "Please select a system prompt from the library",
+        variant: "destructive"
+      });
+      setShowPromptLibrary(true);
       return;
     }
 
@@ -379,9 +475,9 @@ Please provide a comprehensive answer based on this information.`;
       // Debug: Log the system prompt and formatted message being used
       console.log('=== OpenAI Request Debug ===');
       console.log('System prompt being sent to OpenAI:');
-      console.log('Length:', config.systemPrompt.length);
-      console.log('First 200 chars:', config.systemPrompt.substring(0, 200));
-      console.log('Is Circuit Board Medics prompt?:', config.systemPrompt.includes('Circuit Board Medics'));
+      console.log('Length:', activePrompt.content.length);
+      console.log('First 200 chars:', activePrompt.content.substring(0, 200));
+      console.log('Is Circuit Board Medics prompt?:', activePrompt.content.includes('Circuit Board Medics'));
       console.log('Formatted user message preview:', formattedUserMessage.substring(0, 300) + '...');
 
       // Use max_completion_tokens for newer models, max_tokens for older ones
@@ -391,7 +487,7 @@ Please provide a comprehensive answer based on this information.`;
         messages: [
           {
             role: 'system',
-            content: config.systemPrompt
+            content: activePrompt.content
           },
           {
             role: 'user',
@@ -568,14 +664,24 @@ Please provide a comprehensive answer based on this information.`;
       <header className="bg-background/95 backdrop-blur-sm border-b border-border/40 px-6 py-4 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto flex justify-between items-center">
           <img src={logoImage} alt="Circuit Board Medics" className="h-8" />
-          <Button
-            variant="ghost"
-            onClick={() => setShowConfig(!showConfig)}
-            className="text-muted-foreground hover:text-foreground"
-          >
-            <Settings className="h-4 w-4 mr-2" />
-            Configure
-          </Button>
+          <div className="flex items-center space-x-3">
+            <Button
+              variant="ghost"
+              onClick={() => setShowPromptLibrary(true)}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <BookOpen className="h-4 w-4 mr-2" />
+              Prompt Library
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => setShowConfig(!showConfig)}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <Settings className="h-4 w-4 mr-2" />
+              Configure
+            </Button>
+          </div>
         </div>
       </header>
 
@@ -651,15 +757,63 @@ Please provide a comprehensive answer based on this information.`;
             </div>
             <div className="mt-6 space-y-2">
               <label className="text-sm font-medium text-foreground">
-                System Prompt
+                Active System Prompt
               </label>
-              <textarea
-                value={config.systemPrompt}
-                onChange={(e) => setConfig(prev => ({ ...prev, systemPrompt: e.target.value }))}
-                rows={3}
-                className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors resize-none"
-                placeholder="You are a helpful assistant..."
-              />
+              <Select 
+                value={activePromptId} 
+                onValueChange={async (value) => {
+                  try {
+                    await redisSet('active-prompt-id', value);
+                    setActivePromptId(value);
+                    toast({
+                      title: "Success",
+                      description: "System prompt updated"
+                    });
+                  } catch (error) {
+                    toast({
+                      title: "Error",
+                      description: "Failed to update system prompt",
+                      variant: "destructive"
+                    });
+                  }
+                }}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select a system prompt" />
+                </SelectTrigger>
+                <SelectContent>
+                  {prompts.map((prompt) => (
+                    <SelectItem key={prompt.id} value={prompt.id}>
+                      <div className="flex flex-col">
+                        <span className="font-medium">{prompt.name}</span>
+                        {prompt.description && (
+                          <span className="text-xs text-muted-foreground">{prompt.description}</span>
+                        )}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {prompts.length === 0 && (
+                <p className="text-sm text-muted-foreground">
+                  No system prompts available. 
+                  <Button 
+                    variant="link" 
+                    className="h-auto p-0 ml-1" 
+                    onClick={() => setShowPromptLibrary(true)}
+                  >
+                    Create one in the Prompt Library
+                  </Button>
+                </p>
+              )}
+              {activePromptId && getActivePrompt() && (
+                <div className="mt-3 p-3 bg-muted/50 rounded-lg">
+                  <p className="text-xs text-muted-foreground mb-1">Preview:</p>
+                  <p className="text-xs font-mono text-foreground line-clamp-3">
+                    {getActivePrompt()?.content.substring(0, 150)}...
+                  </p>
+                </div>
+              )}
             </div>
             <div className="mt-6 flex justify-end">
               <Button onClick={saveConfigToRedis} className="px-6">
@@ -669,6 +823,19 @@ Please provide a comprehensive answer based on this information.`;
           </div>
         </div>
       )}
+
+      {/* Prompt Library Modal */}
+      <PromptLibrary
+        isOpen={showPromptLibrary}
+        onClose={() => setShowPromptLibrary(false)}
+        redisGet={redisGet}
+        redisSet={redisSet}
+        activePromptId={activePromptId}
+        onPromptSelect={(promptId) => {
+          setActivePromptId(promptId);
+          loadPrompts(); // Reload prompts to reflect changes
+        }}
+      />
 
       {/* Main Chat Container */}
       <div className="max-w-7xl mx-auto px-6 py-8">
