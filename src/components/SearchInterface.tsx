@@ -216,10 +216,6 @@ const SearchInterface = () => {
       setActivePromptId(promptId);
       console.log('Prompt selection saved to Redis');
       
-      toast({
-        title: "Prompt Selected",
-        description: `Active prompt updated to: ${prompts.find(p => p.id === promptId)?.name || 'Unknown'}`,
-      });
     } catch (error) {
       console.error('Failed to select prompt:', error);
       toast({
@@ -347,10 +343,6 @@ const SearchInterface = () => {
         
         console.log('Successfully loaded and validated config:', parsedConfig);
         
-        toast({
-          title: "Configuration Loaded",
-          description: "Settings loaded from previous session",
-        });
       } else {
         console.log('No saved configuration found, using defaults');
         setShowConfig(true);
@@ -402,10 +394,6 @@ const SearchInterface = () => {
       // Store plain object; redisSet will JSON-encode once
       await redisSet('search-assistant-config', config);
       
-      toast({
-        title: "Configuration saved",
-        description: "Your settings have been stored securely in Redis"
-      });
       console.log('Saved config to Redis:', config);
       
       // Close config panel after successful save
@@ -636,10 +624,6 @@ Please provide a comprehensive answer based on this information.`;
       setActiveSources(processSearchResultsToSources(searchResults));
       setQuery('');
       
-      toast({
-        title: "Search completed",
-        description: `Found ${searchResults.length} results and generated response`
-      });
 
     } catch (error) {
       console.error('Search error:', error);
@@ -682,10 +666,6 @@ Please provide a comprehensive answer based on this information.`;
   const copyToClipboard = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text);
-      toast({
-        title: "Copied!",
-        description: "Message copied to clipboard"
-      });
     } catch (error) {
       // Fallback for older browsers
       const textArea = document.createElement('textarea');
@@ -695,10 +675,6 @@ Please provide a comprehensive answer based on this information.`;
       textArea.select();
       try {
         document.execCommand('copy');
-        toast({
-          title: "Copied!",
-          description: "Message copied to clipboard"
-        });
       } catch (fallbackError) {
         toast({
           title: "Copy failed",

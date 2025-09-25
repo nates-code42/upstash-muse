@@ -135,10 +135,6 @@ export const PromptLibrary: React.FC<PromptLibraryProps> = ({
       setFormData({ name: '', description: '', content: '' });
       setIsCreating(false);
       
-      toast({
-        title: "Success",
-        description: "Prompt created successfully"
-      });
     } catch (error) {
       toast({
         title: "Error",
@@ -175,10 +171,6 @@ export const PromptLibrary: React.FC<PromptLibraryProps> = ({
       setFormData({ name: '', description: '', content: '' });
       setEditingPrompt(null);
       
-      toast({
-        title: "Success",
-        description: "Prompt updated successfully"
-      });
     } catch (error) {
       toast({
         title: "Error",
@@ -213,10 +205,6 @@ export const PromptLibrary: React.FC<PromptLibraryProps> = ({
         onPromptSelect(newActivePrompt.id);
       }
       
-      toast({
-        title: "Success",
-        description: "Prompt deleted successfully"
-      });
     } catch (error) {
       toast({
         title: "Error",
@@ -234,10 +222,6 @@ export const PromptLibrary: React.FC<PromptLibraryProps> = ({
       const selectedPrompt = prompts.find(p => p.id === promptId);
       console.log('PromptLibrary: Prompt selected:', promptId, selectedPrompt?.name);
       
-      toast({
-        title: "Prompt Selected",
-        description: `"${selectedPrompt?.name}" is now active`,
-      });
     } catch (error) {
       console.error('PromptLibrary: Failed to select prompt:', error);
       toast({
