@@ -9,6 +9,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Search, Settings, MessageSquare, Loader2, Database, Brain, Send, Copy, ExternalLink, Bot, User } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { Search as UpstashSearch } from '@upstash/search';
+import { parseMarkdownLinks } from '@/lib/utils';
 
 interface SearchResult {
   id: string;
@@ -319,15 +320,29 @@ const SearchInterface = () => {
         const content = result.content || {};
         const metadata = result.metadata || {};
         
-        // Format all content fields
+        // Format all content fields, ensuring URLs are full
         const contentFields = Object.entries(content)
-          .map(([key, value]) => `${key}: ${value}`)
+          .map(([key, value]) => {
+            // If this looks like a URL field, ensure it's a full URL
+            if (typeof value === 'string' && (key.toLowerCase().includes('url') || value.startsWith('/'))) {
+              const fullUrl = value.startsWith('/') ? `https://circuitboardmedics.com${value}` : value;
+              return `${key}: ${fullUrl}`;
+            }
+            return `${key}: ${value}`;
+          })
           .join('\n');
         
-        // Format all metadata fields if they exist
+        // Format all metadata fields, ensuring URLs are full
         const metadataFields = Object.keys(metadata).length > 0 
           ? '\nMetadata:\n' + Object.entries(metadata)
-              .map(([key, value]) => `${key}: ${value}`)
+              .map(([key, value]) => {
+                // If this looks like a URL field, ensure it's a full URL
+                if (typeof value === 'string' && (key.toLowerCase().includes('url') || value.startsWith('/'))) {
+                  const fullUrl = value.startsWith('/') ? `https://circuitboardmedics.com${value}` : value;
+                  return `${key}: ${fullUrl}`;
+                }
+                return `${key}: ${value}`;
+              })
               .join('\n')
           : '';
         
@@ -724,7 +739,12 @@ Please provide a comprehensive answer based on this information.`;
                                 </Button>
                               </div>
                               <div className="prose prose-sm max-w-none text-foreground">
-                                <p className="whitespace-pre-wrap leading-relaxed">{message.response}</p>
+                                <div 
+                                  className="whitespace-pre-wrap leading-relaxed"
+                                  dangerouslySetInnerHTML={{ 
+                                    __html: parseMarkdownLinks(message.response) 
+                                  }}
+                                />
                               </div>
                             </div>
                           </div>
