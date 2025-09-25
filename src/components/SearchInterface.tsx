@@ -397,15 +397,16 @@ Please provide a comprehensive answer based on this information.`;
             role: 'user',
             content: formattedUserMessage
           }
-        ],
-        temperature: 0.7
+        ]
       };
       
       // Add the appropriate token limit parameter based on model
       if (isNewerModel) {
         requestBody.max_completion_tokens = 4000;
+        // Newer models only support default temperature (1)
       } else {
         requestBody.max_tokens = 4000;
+        requestBody.temperature = 0.7;
       }
 
       const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
