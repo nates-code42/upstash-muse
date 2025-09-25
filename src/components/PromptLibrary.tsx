@@ -265,7 +265,7 @@ export const PromptLibrary: React.FC<PromptLibraryProps> = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col">
+      <DialogContent className="max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
         <DialogHeader className="flex-shrink-0">
           <DialogTitle className="flex items-center">
             <BookOpen className="h-5 w-5 mr-2 text-primary" />
@@ -274,9 +274,9 @@ export const PromptLibrary: React.FC<PromptLibraryProps> = ({
         </DialogHeader>
 
         <div className="flex-1 min-h-0">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-full min-h-[600px]">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-full min-h-0">
             {/* Prompts List */}
-            <div className="flex flex-col">
+            <div className="flex flex-col min-h-0">
               <div className="flex justify-between items-center mb-4">
                 <h3 className="font-semibold text-foreground">Your Prompts</h3>
                 <Button onClick={startCreating} size="sm" className="h-8">
@@ -285,7 +285,7 @@ export const PromptLibrary: React.FC<PromptLibraryProps> = ({
                 </Button>
               </div>
 
-              <ScrollArea className="flex-1 max-h-[500px]">
+              <ScrollArea className="flex-1 h-full">
                 <div className="pr-4">
                   {isLoading ? (
                     <div className="flex items-center justify-center py-8">
@@ -389,7 +389,7 @@ export const PromptLibrary: React.FC<PromptLibraryProps> = ({
                     </Button>
                   </div>
 
-                  <ScrollArea className="flex-1 max-h-[500px]">
+                  <ScrollArea className="flex-1 h-full">
                     <div className="flex flex-col space-y-4 pr-4">
                       <div>
                         <label className="text-sm font-medium text-foreground">Name *</label>
