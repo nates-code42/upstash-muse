@@ -104,6 +104,28 @@ const SearchInterface = () => {
     }
   };
 
+  const redisSet = async (key: string, value: any) => {
+    try {
+      const response = await fetch(`${redisConfig.url}/set/${encodeURIComponent(key)}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${redisConfig.token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(value),
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Redis SET failed: ${response.status} ${response.statusText}`);
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error('Redis SET error:', error);
+      throw error;
+    }
+  };
+
   const loadPrompts = async () => {
     try {
       const storedPrompts = await redisGet('system-prompts');
@@ -152,26 +174,6 @@ const SearchInterface = () => {
     } catch (error) {
       console.error('Failed to migrate existing prompt:', error);
       return false;
-    }
-  };
-    try {
-      const response = await fetch(`${redisConfig.url}/set/${encodeURIComponent(key)}`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${redisConfig.token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(value),
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Redis SET failed: ${response.status} ${response.statusText}`);
-      }
-      
-      return await response.json();
-    } catch (error) {
-      console.error('Redis SET error:', error);
-      throw error;
     }
   };
 
