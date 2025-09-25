@@ -474,330 +474,312 @@ const SearchInterface = () => {
   }, [messages, isLoading]);
 
   return (
-    <div className="min-h-screen bg-gradient-subtle">
+    <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20">
       {/* Header */}
-      <header className="border-b bg-card/50 backdrop-blur-sm sticky top-0 z-10">
-        <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <div className="w-8 h-8 bg-gradient-primary rounded-lg flex items-center justify-center">
-              <Search className="w-4 h-4 text-white" />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold">Search Assistant</h1>
-              <p className="text-sm text-muted-foreground">Powered by Upstash & OpenAI</p>
-            </div>
-          </div>
-          
-          <Button 
-            variant="ghost" 
+      <header className="bg-background/95 backdrop-blur-sm border-b border-border/40 px-6 py-4 sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto flex justify-between items-center">
+          <h1 className="text-2xl font-semibold text-foreground">AI Search</h1>
+          <Button
+            variant="ghost"
             onClick={() => setShowConfig(!showConfig)}
-            className="gap-2"
+            className="text-muted-foreground hover:text-foreground"
           >
-            <Settings className="w-4 h-4" />
-            Config
+            <Settings className="h-4 w-4 mr-2" />
+            Configure
           </Button>
         </div>
       </header>
 
       {/* Configuration Panel */}
       {showConfig && (
-        <div className="max-w-6xl mx-auto px-6 py-4">
-          <Card className="shadow-card">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Settings className="w-5 h-5" />
-                Configuration
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-4">
-                  <div>
-                    <Label htmlFor="upstash-url">Upstash Search URL</Label>
-                    <Input
-                      id="upstash-url"
-                      placeholder="https://your-database-url.upstash.io"
-                      value={config.upstashUrl}
-                      onChange={(e) => setConfig(prev => ({ ...prev, upstashUrl: e.target.value }))}
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="upstash-token">Upstash Token</Label>
-                    <Input
-                      id="upstash-token"
-                      type="password"
-                      placeholder="Your Upstash token"
-                      value={config.upstashToken}
-                      onChange={(e) => setConfig(prev => ({ ...prev, upstashToken: e.target.value }))}
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="search-index">Search Index Name</Label>
-                    <Input
-                      id="search-index"
-                      placeholder="CBM Products1"
-                      value={config.searchIndex}
-                      onChange={(e) => setConfig(prev => ({ ...prev, searchIndex: e.target.value }))}
-                    />
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Your Upstash Search index name (e.g., "CBM Products1")
-                    </p>
-                  </div>
-                  <div>
-                    <Label htmlFor="content-fields">Content Fields to Search</Label>
-                    <Input
-                      id="content-fields"
-                      placeholder="Name,Description"
-                      value={config.contentFields}
-                      onChange={(e) => setConfig(prev => ({ ...prev, contentFields: e.target.value }))}
-                    />
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Comma-separated list of fields in your content to search
-                    </p>
-                  </div>
-                </div>
-                
-                <div className="space-y-4">
-                  <div>
-                    <Label htmlFor="openai-key">OpenAI API Key</Label>
-                    <Input
-                      id="openai-key"
-                      type="password"
-                      placeholder="sk-..."
-                      value={config.openaiApiKey}
-                      onChange={(e) => setConfig(prev => ({ ...prev, openaiApiKey: e.target.value }))}
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="openai-model">OpenAI Model</Label>
-                    <select
-                      id="openai-model"
-                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                      value={config.openaiModel}
-                      onChange={(e) => setConfig(prev => ({ ...prev, openaiModel: e.target.value }))}
-                    >
-                      <option value="gpt-4o">GPT-4o (Recommended)</option>
-                      <option value="gpt-4o-mini">GPT-4o Mini (Faster, Cheaper)</option>
-                      <option value="gpt-4o-2024-08-06">GPT-4o (2024-08-06)</option>
-                      <option value="gpt-4-turbo">GPT-4 Turbo</option>
-                    </select>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      GPT-4o is recommended for best performance. GPT-4o Mini for cost efficiency.
-                    </p>
-                  </div>
-                  <div>
-                    <Label htmlFor="system-prompt">System Prompt</Label>
-                    <Textarea
-                      id="system-prompt"
-                      rows={4}
-                      placeholder="Define how the AI should respond..."
-                      value={config.systemPrompt}
-                      onChange={(e) => setConfig(prev => ({ ...prev, systemPrompt: e.target.value }))}
-                    />
-                  </div>
-                </div>
-              </div>
-              
-              <div className="flex justify-end gap-3">
-                <Button 
-                  variant="outline" 
-                  onClick={() => setShowConfig(false)}
-                >
-                  Cancel
-                </Button>
-                <Button 
-                  variant="premium" 
-                  onClick={saveConfigToRedis}
-                  className="gap-2"
-                >
-                  <Database className="w-4 h-4" />
-                  Save Configuration
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {/* Chat Interface */}
-      <div className="flex h-[calc(100vh-80px)]">
-        {/* Chat Area - Left Side */}
-        <div className="flex-1 flex flex-col">
-          {/* Chat Messages */}
-          <ScrollArea className="flex-1 px-6">
-            <div className="max-w-4xl mx-auto py-6 space-y-6">
-              {isLoadingConfig ? (
-                <div className="flex items-center justify-center py-12">
-                  <div className="text-center">
-                    <Loader2 className="w-8 h-8 text-primary animate-spin mx-auto mb-4" />
-                    <p className="text-muted-foreground">Loading configuration...</p>
-                  </div>
-                </div>
-              ) : messages.length === 0 ? (
-                <div className="flex items-center justify-center py-12">
-                  <div className="text-center max-w-md">
-                    <MessageSquare className="w-12 h-12 text-primary mx-auto mb-4" />
-                    <h3 className="text-lg font-semibold mb-2">Ready to Search</h3>
-                    <p className="text-muted-foreground">
-                      {config.upstashUrl && config.upstashToken && config.openaiApiKey && config.searchIndex
-                        ? "Ask any question and I'll search the database for relevant information."
-                        : "Configure your API credentials to get started."
-                      }
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  {messages.map((message, index) => (
-                    <div key={message.id} className="space-y-4">
-                      {/* User Message */}
-                      <div className="flex justify-end">
-                        <div className="max-w-[80%] bg-primary text-primary-foreground rounded-2xl rounded-br-md px-4 py-3">
-                          <div className="flex items-center gap-2 mb-1">
-                            <User className="w-4 h-4" />
-                            <span className="text-sm opacity-90">
-                              {message.timestamp.toLocaleTimeString()}
-                            </span>
-                          </div>
-                          <p className="text-sm">{message.query}</p>
-                        </div>
-                      </div>
-
-                      {/* AI Response */}
-                      <div className="flex justify-start">
-                        <div className="max-w-[80%] bg-card border rounded-2xl rounded-bl-md px-4 py-3">
-                          <div className="flex items-center justify-between mb-2">
-                            <div className="flex items-center gap-2">
-                              <Bot className="w-4 h-4 text-primary" />
-                              <span className="text-sm text-muted-foreground">AI Assistant</span>
-                            </div>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-6 w-6 p-0"
-                              onClick={() => copyToClipboard(message.response)}
-                            >
-                              <Copy className="w-3 h-3" />
-                            </Button>
-                          </div>
-                          <div className="prose prose-sm max-w-none">
-                            <p className="whitespace-pre-wrap text-foreground leading-relaxed">
-                              {message.response}
-                            </p>
-                          </div>
-                          {message.searchResults && message.searchResults.length > 0 && (
-                            <div className="mt-3 pt-3 border-t text-xs text-muted-foreground">
-                              Based on {message.searchResults.length} search results
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                  
-                  {/* Loading indicator */}
-                  {isLoading && (
-                    <div className="flex justify-start">
-                      <div className="bg-card border rounded-2xl rounded-bl-md px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <Bot className="w-4 h-4 text-primary" />
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                          <span className="text-sm text-muted-foreground">Searching and thinking...</span>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                  
-                  <div ref={chatEndRef} />
-                </>
-              )}
-            </div>
-          </ScrollArea>
-
-          {/* Chat Input - Bottom */}
-          <div className="border-t bg-background p-6">
-            <div className="max-w-4xl mx-auto flex gap-3">
-              <div className="flex-1">
-                <Input
-                  placeholder="Ask a question..."
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  onKeyPress={handleKeyPress}
-                  disabled={isLoading}
-                  className="h-12 text-base"
+        <div className="bg-background/95 backdrop-blur-sm border-b border-border/40 px-6 py-6">
+          <div className="max-w-7xl mx-auto">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">
+                  Upstash Search URL
+                </label>
+                <input
+                  type="text"
+                  value={config.upstashUrl}
+                  onChange={(e) => setConfig(prev => ({ ...prev, upstashUrl: e.target.value }))}
+                  className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
+                  placeholder="https://your-search-endpoint.upstash.io"
                 />
               </div>
-              <Button 
-                onClick={handleSearch}
-                disabled={isLoading || !query.trim()}
-                size="lg"
-                className="h-12 px-6 gap-2"
-              >
-                {isLoading ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Send className="w-4 h-4" />
-                )}
-                Send
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">
+                  Upstash Token
+                </label>
+                <input
+                  type="password"
+                  value={config.upstashToken}
+                  onChange={(e) => setConfig(prev => ({ ...prev, upstashToken: e.target.value }))}
+                  className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
+                  placeholder="Your Upstash token"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">
+                  OpenAI API Key
+                </label>
+                <input
+                  type="password"
+                  value={config.openaiApiKey}
+                  onChange={(e) => setConfig(prev => ({ ...prev, openaiApiKey: e.target.value }))}
+                  className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
+                  placeholder="sk-..."
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">
+                  OpenAI Model
+                </label>
+                <select
+                  value={config.openaiModel}
+                  onChange={(e) => setConfig(prev => ({ ...prev, openaiModel: e.target.value }))}
+                  className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
+                >
+                  <option value="gpt-4o-mini">gpt-4o-mini</option>
+                  <option value="gpt-4o">gpt-4o</option>
+                  <option value="gpt-3.5-turbo">gpt-3.5-turbo</option>
+                </select>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">
+                  Search Index
+                </label>
+                <input
+                  type="text"
+                  value={config.searchIndex}
+                  onChange={(e) => setConfig(prev => ({ ...prev, searchIndex: e.target.value }))}
+                  className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
+                  placeholder="my-search-index"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">
+                  Content Fields
+                </label>
+                <input
+                  type="text"
+                  value={config.contentFields}
+                  onChange={(e) => setConfig(prev => ({ ...prev, contentFields: e.target.value }))}
+                  className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
+                  placeholder="title,content,description"
+                />
+              </div>
+            </div>
+            <div className="mt-6 space-y-2">
+              <label className="text-sm font-medium text-foreground">
+                System Prompt
+              </label>
+              <textarea
+                value={config.systemPrompt}
+                onChange={(e) => setConfig(prev => ({ ...prev, systemPrompt: e.target.value }))}
+                rows={3}
+                className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors resize-none"
+                placeholder="You are a helpful assistant..."
+              />
+            </div>
+            <div className="mt-6 flex justify-end">
+              <Button onClick={saveConfigToRedis} className="px-6">
+                Save Configuration
               </Button>
             </div>
           </div>
         </div>
+      )}
 
-        {/* Sources Panel - Right Side */}
-        <div className="w-80 border-l bg-muted/30">
-          <div className="p-4 border-b">
-            <h3 className="font-semibold flex items-center gap-2">
-              <ExternalLink className="w-4 h-4" />
-              Sources
-            </h3>
-          </div>
-          <ScrollArea className="h-full">
-            <div className="p-4 space-y-4">
-              {activeSources.length === 0 ? (
-                <div className="text-center py-8">
-                  <Database className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
-                  <p className="text-sm text-muted-foreground">
-                    Sources will appear here after you search
-                  </p>
-                </div>
-              ) : (
-                activeSources.map((source, index) => (
-                  <Card key={source.id} className="p-3 hover:shadow-md transition-shadow">
-                    <div className="space-y-2">
-                      <div className="flex items-start justify-between gap-2">
-                        <Badge variant="outline" className="text-xs">
-                          {index + 1}
-                        </Badge>
-                        {source.url && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-6 w-6 p-0"
-                            onClick={() => window.open(source.url, '_blank')}
-                          >
-                            <ExternalLink className="w-3 h-3" />
-                          </Button>
-                        )}
-                      </div>
-                      <h4 className="font-medium text-sm leading-tight">
-                        {source.title}
-                      </h4>
-                      <p className="text-xs text-muted-foreground leading-relaxed">
-                        {source.description}
-                      </p>
-                      {source.metadata && source.metadata['Retail Price'] && (
-                        <div className="text-xs">
-                          <span className="font-medium">Price: </span>
-                          <span className="text-green-600">${source.metadata['Retail Price']}</span>
-                        </div>
-                      )}
-                    </div>
-                  </Card>
-                ))
-              )}
+      {/* Main Chat Container */}
+      <div className="max-w-7xl mx-auto px-6 py-8">
+        <div className="flex gap-8 h-[calc(100vh-240px)]">
+          {/* Chat Area */}
+          <div className="flex-1 flex flex-col max-w-4xl">
+            {/* Search Input */}
+            <div className="mb-6">
+              <div className="relative">
+                <input
+                  type="text"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyPress={handleKeyPress}
+                  placeholder="Ask me anything..."
+                  className="w-full px-6 py-4 bg-background border border-border rounded-2xl shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all duration-200 text-lg placeholder:text-muted-foreground"
+                  disabled={isLoading}
+                />
+                <Button
+                  onClick={handleSearch}
+                  disabled={isLoading || !query.trim()}
+                  className="absolute right-2 top-2 bottom-2 rounded-xl px-6 shadow-sm"
+                >
+                  <Send className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
-          </ScrollArea>
+
+            {/* Chat Messages */}
+            <div className="flex-1 overflow-hidden">
+              <ScrollArea className="h-full">
+                {isLoadingConfig ? (
+                  <div className="flex items-center justify-center h-full">
+                    <div className="text-center">
+                      <Loader2 className="w-8 h-8 text-primary animate-spin mx-auto mb-4" />
+                      <p className="text-muted-foreground">Loading configuration...</p>
+                    </div>
+                  </div>
+                ) : messages.length === 0 ? (
+                  <div className="flex items-center justify-center h-full">
+                    <div className="text-center py-16">
+                      <div className="w-16 h-16 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center">
+                        <Search className="h-8 w-8 text-primary" />
+                      </div>
+                      <h3 className="text-xl font-semibold text-foreground mb-2">
+                        Ready to help
+                      </h3>
+                      <p className="text-muted-foreground max-w-md mx-auto">
+                        Ask any question about our products and I'll search through our database to give you the best answer.
+                      </p>
+                      <div className="mt-6 flex flex-wrap justify-center gap-2">
+                        <button 
+                          onClick={() => setQuery("What FICM parts do you have for Ford?")}
+                          className="px-4 py-2 text-sm bg-muted/50 hover:bg-muted text-muted-foreground hover:text-foreground rounded-full transition-colors"
+                        >
+                          FICM parts for Ford
+                        </button>
+                        <button 
+                          onClick={() => setQuery("Show me repair services")}
+                          className="px-4 py-2 text-sm bg-muted/50 hover:bg-muted text-muted-foreground hover:text-foreground rounded-full transition-colors"
+                        >
+                          Repair services
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-6 pb-6">
+                    {messages.map((message, index) => (
+                      <div key={message.id} className="space-y-4">
+                        {/* User Message */}
+                        <div className="flex justify-end">
+                          <div className="max-w-2xl bg-primary text-primary-foreground rounded-2xl rounded-br-md px-6 py-3 shadow-sm">
+                            <p className="text-sm font-medium">{message.query}</p>
+                          </div>
+                        </div>
+                        
+                        {/* AI Response */}
+                        <div className="flex justify-start items-start space-x-3">
+                          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center flex-shrink-0 mt-1">
+                            <Bot className="h-4 w-4 text-primary" />
+                          </div>
+                          <div className="flex-1 max-w-3xl">
+                            <div className="bg-muted/50 rounded-2xl rounded-tl-md px-6 py-4 shadow-sm">
+                              <div className="flex justify-between items-start mb-3">
+                                <span className="text-xs font-medium text-muted-foreground">AI Assistant</span>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => copyToClipboard(message.response)}
+                                  className="h-7 w-7 p-0 hover:bg-background/50"
+                                >
+                                  <Copy className="h-3 w-3" />
+                                </Button>
+                              </div>
+                              <div className="prose prose-sm max-w-none text-foreground">
+                                <p className="whitespace-pre-wrap leading-relaxed">{message.response}</p>
+                              </div>
+                              {message.searchResults && message.searchResults.length > 0 && (
+                                <div className="mt-4 pt-3 border-t border-border/50">
+                                  <p className="text-xs text-muted-foreground">
+                                    Sources: {message.searchResults.map((_, idx) => `[${idx + 1}]`).join(' ')}
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    
+                    {isLoading && (
+                      <div className="flex justify-start items-start space-x-3">
+                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center flex-shrink-0 mt-1">
+                          <Bot className="h-4 w-4 text-primary" />
+                        </div>
+                        <div className="bg-muted/50 rounded-2xl rounded-tl-md px-6 py-4 shadow-sm">
+                          <div className="flex items-center space-x-2">
+                            <div className="flex space-x-1">
+                              <div className="w-2 h-2 bg-muted-foreground/40 rounded-full animate-bounce"></div>
+                              <div className="w-2 h-2 bg-muted-foreground/40 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
+                              <div className="w-2 h-2 bg-muted-foreground/40 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+                            </div>
+                            <span className="text-sm text-muted-foreground">Searching...</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+                <div ref={chatEndRef} />
+              </ScrollArea>
+            </div>
+          </div>
+
+          {/* Sources Panel */}
+          <div className="w-80 flex-shrink-0">
+            <div className="bg-background/60 backdrop-blur-sm border border-border/40 rounded-2xl shadow-sm h-full flex flex-col overflow-hidden">
+              <div className="px-6 py-4 border-b border-border/40">
+                <h3 className="font-semibold text-foreground flex items-center">
+                  <ExternalLink className="h-4 w-4 mr-2 text-primary" />
+                  Sources
+                </h3>
+              </div>
+              <ScrollArea className="flex-1">
+                <div className="p-6">
+                  {activeSources.length === 0 ? (
+                    <div className="text-center py-12">
+                      <div className="w-12 h-12 mx-auto mb-4 rounded-xl bg-muted/50 flex items-center justify-center">
+                        <Database className="h-6 w-6 text-muted-foreground/50" />
+                      </div>
+                      <p className="text-sm text-muted-foreground leading-relaxed">
+                        Sources will appear here when you ask questions
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {activeSources.map((source, index) => (
+                        <div key={source.id} className="group bg-background/80 border border-border/40 rounded-xl p-4 hover:bg-background transition-all duration-200 hover:shadow-sm">
+                          <div className="flex items-start justify-between mb-3">
+                            <span className="text-xs font-medium text-primary bg-primary/10 px-2 py-1 rounded-md">
+                              [{index + 1}]
+                            </span>
+                            <ExternalLink className="h-3 w-3 text-muted-foreground/50 group-hover:text-muted-foreground transition-colors" />
+                          </div>
+                          <h4 className="font-medium text-sm text-foreground mb-2 leading-snug">
+                            {source.title}
+                          </h4>
+                          <p className="text-xs text-muted-foreground mb-3 leading-relaxed line-clamp-3">
+                            {source.description}
+                          </p>
+                          {source.url && (
+                            <a
+                              href={source.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center text-xs text-primary hover:text-primary/80 font-medium transition-colors"
+                            >
+                              View Details
+                              <ExternalLink className="h-3 w-3 ml-1" />
+                            </a>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </ScrollArea>
+            </div>
+          </div>
         </div>
       </div>
     </div>
