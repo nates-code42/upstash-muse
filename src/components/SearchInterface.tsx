@@ -113,16 +113,21 @@ const SearchInterface = () => {
       setIsLoadingConfig(true);
       console.log('Loading configuration from Redis...');
       
-      const savedConfigString = await redisGet('search-assistant-config');
-      console.log('Raw Redis response:', savedConfigString);
+      const raw = await redisGet('search-assistant-config');
+      console.log('Raw Redis response:', raw);
       
-      if (savedConfigString) {
-        let parsedConfig;
+      if (raw) {
+        let parsedConfig: any = raw;
+        let wasDoubleEncoded = false;
         
-        // Parse JSON string if it's a string, or use directly if it's already an object
-        if (typeof savedConfigString === 'string') {
+        // Parse JSON if needed (handles possible double-encoding)
+        if (typeof parsedConfig === 'string') {
           try {
-            parsedConfig = JSON.parse(savedConfigString);
+            parsedConfig = JSON.parse(parsedConfig);
+            if (typeof parsedConfig === 'string') {
+              parsedConfig = JSON.parse(parsedConfig);
+              wasDoubleEncoded = true;
+            }
           } catch (parseError) {
             console.error('Failed to parse config JSON:', parseError);
             toast({
@@ -133,13 +138,22 @@ const SearchInterface = () => {
             setShowConfig(true);
             return;
           }
-        } else if (typeof savedConfigString === 'object') {
-          parsedConfig = savedConfigString;
+        }
+        
+        if (!parsedConfig || typeof parsedConfig !== 'object') {
+          console.warn('Parsed config is not an object:', parsedConfig);
+          toast({
+            title: "Configuration Error",
+            description: "Saved configuration is corrupted. Please reconfigure.",
+            variant: "destructive"
+          });
+          setShowConfig(true);
+          return;
         }
         
         // Validate critical fields
         const requiredFields = ['upstashUrl', 'upstashToken', 'openaiApiKey', 'searchIndex'];
-        const missingFields = requiredFields.filter(field => !parsedConfig[field]);
+        const missingFields = requiredFields.filter((field) => !parsedConfig[field]);
         
         if (missingFields.length > 0) {
           console.warn('Missing configuration fields:', missingFields);
@@ -152,24 +166,33 @@ const SearchInterface = () => {
         }
         
         // Merge with existing config, keeping defaults for missing fields
-        setConfig(prev => ({ 
-          ...prev, 
+        setConfig((prev) => ({
+          ...prev,
           ...parsedConfig,
-          // Ensure critical fields are not empty strings
           upstashUrl: parsedConfig.upstashUrl || prev.upstashUrl,
           upstashToken: parsedConfig.upstashToken || prev.upstashToken,
           openaiApiKey: parsedConfig.openaiApiKey || prev.openaiApiKey,
           searchIndex: parsedConfig.searchIndex || prev.searchIndex,
           openaiModel: parsedConfig.openaiModel || prev.openaiModel,
           systemPrompt: parsedConfig.systemPrompt || prev.systemPrompt,
-          contentFields: parsedConfig.contentFields || prev.contentFields
+          contentFields: parsedConfig.contentFields || prev.contentFields,
         }));
+        
+        // If we detected double-encoding, normalize by re-saving once
+        if (wasDoubleEncoded) {
+          try {
+            await redisSet('search-assistant-config', parsedConfig);
+            console.log('Normalized double-encoded configuration in Redis');
+          } catch (e) {
+            console.warn('Failed to normalize saved config:', e);
+          }
+        }
         
         console.log('Successfully loaded and validated config:', parsedConfig);
         
         toast({
           title: "Configuration Loaded",
-          description: "Settings loaded from previous session"
+          description: "Settings loaded from previous session",
         });
       } else {
         console.log('No saved configuration found, using defaults');
@@ -208,8 +231,8 @@ const SearchInterface = () => {
         return;
       }
       
-      // Store as JSON string to ensure consistent format
-      await redisSet('search-assistant-config', JSON.stringify(config));
+      // Store plain object; redisSet will JSON-encode once
+      await redisSet('search-assistant-config', config);
       
       toast({
         title: "Configuration saved",
