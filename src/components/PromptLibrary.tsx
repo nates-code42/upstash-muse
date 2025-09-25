@@ -66,17 +66,23 @@ export const PromptLibrary: React.FC<PromptLibraryProps> = ({
   }, [isOpen]);
 
   const loadPrompts = async () => {
-    setIsLoading(true);
     try {
+      setIsLoading(true);
       const storedPrompts = await redisGet('system-prompts');
-      if (storedPrompts && Array.isArray(storedPrompts)) {
-        setPrompts(storedPrompts);
+      const promptsArray = Array.isArray(storedPrompts) ? storedPrompts : [];
+      
+      console.log('PromptLibrary: Loaded prompts:', promptsArray.length);
+      setPrompts(promptsArray);
+      
+      // If no prompts exist, show the create form
+      if (promptsArray.length === 0) {
+        setIsCreating(true);
       }
     } catch (error) {
-      console.error('Failed to load prompts:', error);
+      console.error('PromptLibrary: Failed to load prompts:', error);
       toast({
         title: "Error",
-        description: "Failed to load prompt library",
+        description: "Failed to load prompts from database",
         variant: "destructive"
       });
     } finally {
@@ -224,12 +230,16 @@ export const PromptLibrary: React.FC<PromptLibraryProps> = ({
     try {
       await redisSet('active-prompt-id', promptId);
       onPromptSelect(promptId);
+      
+      const selectedPrompt = prompts.find(p => p.id === promptId);
+      console.log('PromptLibrary: Prompt selected:', promptId, selectedPrompt?.name);
+      
       toast({
-        title: "Success",
-        description: "Prompt selected"
+        title: "Prompt Selected",
+        description: `"${selectedPrompt?.name}" is now active`,
       });
     } catch (error) {
-      console.error('Failed to select prompt:', error);
+      console.error('PromptLibrary: Failed to select prompt:', error);
       toast({
         title: "Error",
         description: "Failed to select prompt",

@@ -47,6 +47,7 @@ const SearchInterface = () => {
   const [activeSources, setActiveSources] = useState<Source[]>([]);
   const [prompts, setPrompts] = useState<SystemPrompt[]>([]);
   const [activePromptId, setActivePromptId] = useState<string>('');
+  const [promptsReady, setPromptsReady] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   
@@ -82,6 +83,29 @@ const SearchInterface = () => {
     }
   }, [query]);
 
+  // Smart parsing function to handle various Redis encoding formats
+  const smartParse = (value: any): any => {
+    if (typeof value !== 'string') return value;
+    
+    const looksLikeJSON = (s: string) => {
+      const trimmed = s.trim();
+      return trimmed.startsWith('{') || trimmed.startsWith('[') || trimmed.startsWith('"');
+    };
+    
+    if (!looksLikeJSON(value)) return value;
+    
+    try {
+      let parsed = JSON.parse(value);
+      // Handle double-encoding by parsing again if result is still a JSON string
+      if (typeof parsed === 'string' && looksLikeJSON(parsed)) {
+        parsed = JSON.parse(parsed);
+      }
+      return parsed;
+    } catch {
+      return value;
+    }
+  };
+
   const redisGet = async (key: string) => {
     try {
       const response = await fetch(`${redisConfig.url}/get/${encodeURIComponent(key)}`, {
@@ -97,7 +121,7 @@ const SearchInterface = () => {
       }
       
       const data = await response.json();
-      return data.result;
+      return smartParse(data.result);
     } catch (error) {
       console.error('Redis GET error:', error);
       return null;
@@ -106,13 +130,17 @@ const SearchInterface = () => {
 
   const redisSet = async (key: string, value: any) => {
     try {
+      const isString = typeof value === 'string';
+      const body = isString ? value : JSON.stringify(value);
+      const headers: Record<string, string> = {
+        'Authorization': `Bearer ${redisConfig.token}`,
+        'Content-Type': isString ? 'text/plain' : 'application/json',
+      };
+
       const response = await fetch(`${redisConfig.url}/set/${encodeURIComponent(key)}`, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${redisConfig.token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(value),
+        headers,
+        body,
       });
       
       if (!response.ok) {
@@ -128,22 +156,44 @@ const SearchInterface = () => {
 
   const loadPrompts = async () => {
     try {
+      console.log('Loading prompts from Redis...');
+      setPromptsReady(false);
+      
+      // Load prompts with smart parsing
       const storedPrompts = await redisGet('system-prompts');
-      if (storedPrompts && Array.isArray(storedPrompts)) {
-        setPrompts(storedPrompts);
-        
-        // Load active prompt ID
+      const promptsArray = Array.isArray(storedPrompts) ? storedPrompts : [];
+      
+      console.log('Loaded prompts:', promptsArray.length);
+      setPrompts(promptsArray);
+      
+      if (promptsArray.length > 0) {
+        // Load active prompt ID with smart parsing
         const activeId = await redisGet('active-prompt-id');
-        if (activeId && storedPrompts.some(p => p.id === activeId)) {
+        console.log('Loaded active prompt ID:', activeId);
+        
+        // Verify the active ID exists in the prompts array
+        const validPrompt = promptsArray.find(p => p.id === activeId);
+        
+        if (validPrompt) {
           setActivePromptId(activeId);
-        } else if (storedPrompts.length > 0) {
-          // Set first prompt as active if no active ID found
-          setActivePromptId(storedPrompts[0].id);
-          await redisSet('active-prompt-id', storedPrompts[0].id);
+          console.log('Using existing active prompt:', activeId);
+        } else {
+          // Set first prompt as active and persist it
+          const firstPromptId = promptsArray[0].id;
+          setActivePromptId(firstPromptId);
+          await redisSet('active-prompt-id', firstPromptId);
+          console.log('Set first prompt as active:', firstPromptId);
         }
+      } else {
+        console.log('No prompts found, will show prompt library');
+        setActivePromptId('');
       }
+      
+      setPromptsReady(true);
+      console.log('Prompts loading complete');
     } catch (error) {
       console.error('Failed to load prompts:', error);
+      setPromptsReady(true); // Allow UI to continue even if prompts fail
       toast({
         title: "Error Loading Prompts",
         description: "Failed to load system prompts. Please refresh the page.",
@@ -160,8 +210,24 @@ const SearchInterface = () => {
 
   // Enhanced prompt select handler
   const handlePromptSelect = async (promptId: string) => {
-    setActivePromptId(promptId);
-    await loadPrompts(); // Refresh to ensure we have the latest data
+    console.log('Selecting prompt:', promptId);
+    try {
+      await redisSet('active-prompt-id', promptId);
+      setActivePromptId(promptId);
+      console.log('Prompt selection saved to Redis');
+      
+      toast({
+        title: "Prompt Selected",
+        description: `Active prompt updated to: ${prompts.find(p => p.id === promptId)?.name || 'Unknown'}`,
+      });
+    } catch (error) {
+      console.error('Failed to select prompt:', error);
+      toast({
+        title: "Error",
+        description: "Failed to save prompt selection",
+        variant: "destructive"
+      });
+    }
   };
 
   const getActivePrompt = (): SystemPrompt | null => {
@@ -360,6 +426,16 @@ const SearchInterface = () => {
       toast({
         title: "Please enter a search query",
         variant: "destructive"
+      });
+      return;
+    }
+
+    // Check if prompts are still loading
+    if (!promptsReady) {
+      toast({
+        title: "Please wait",
+        description: "Still loading system prompts...",
+        variant: "default"
       });
       return;
     }
@@ -780,22 +856,7 @@ Please provide a comprehensive answer based on this information.`;
               </label>
               <Select 
                 value={activePromptId} 
-                onValueChange={async (value) => {
-                  try {
-                    await redisSet('active-prompt-id', value);
-                    setActivePromptId(value);
-                    toast({
-                      title: "Success",
-                      description: "System prompt updated"
-                    });
-                  } catch (error) {
-                    toast({
-                      title: "Error",
-                      description: "Failed to update system prompt",
-                      variant: "destructive"
-                    });
-                  }
-                }}
+                onValueChange={handlePromptSelect}
               >
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="Select a system prompt" />
