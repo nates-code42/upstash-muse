@@ -265,16 +265,16 @@ export const PromptLibrary: React.FC<PromptLibraryProps> = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
-        <DialogHeader>
+      <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col">
+        <DialogHeader className="flex-shrink-0">
           <DialogTitle className="flex items-center">
             <BookOpen className="h-5 w-5 mr-2 text-primary" />
             System Prompt Library
           </DialogTitle>
         </DialogHeader>
 
-        <div className="flex-1 overflow-hidden">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-full">
+        <div className="flex-1 min-h-0">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-full min-h-[600px]">
             {/* Prompts List */}
             <div className="flex flex-col">
               <div className="flex justify-between items-center mb-4">
@@ -285,12 +285,13 @@ export const PromptLibrary: React.FC<PromptLibraryProps> = ({
                 </Button>
               </div>
 
-              <ScrollArea className="flex-1">
-                {isLoading ? (
-                  <div className="flex items-center justify-center py-8">
-                    <div className="text-muted-foreground">Loading prompts...</div>
-                  </div>
-                ) : prompts.length === 0 ? (
+              <ScrollArea className="flex-1 max-h-[500px]">
+                <div className="pr-4">
+                  {isLoading ? (
+                    <div className="flex items-center justify-center py-8">
+                      <div className="text-muted-foreground">Loading prompts...</div>
+                    </div>
+                  ) : prompts.length === 0 ? (
                   <div className="text-center py-8">
                     <div className="w-12 h-12 mx-auto mb-4 rounded-xl bg-muted/50 flex items-center justify-center">
                       <BookOpen className="h-6 w-6 text-muted-foreground/50" />
@@ -301,8 +302,8 @@ export const PromptLibrary: React.FC<PromptLibraryProps> = ({
                     </Button>
                   </div>
                 ) : (
-                  <div className="space-y-3">
-                    {prompts.map((prompt) => (
+                    <div className="space-y-3">
+                      {prompts.map((prompt) => (
                       <Card 
                         key={prompt.id} 
                         className={`cursor-pointer transition-all hover:shadow-sm ${
@@ -368,16 +369,17 @@ export const PromptLibrary: React.FC<PromptLibraryProps> = ({
                           </p>
                         </CardContent>
                       </Card>
-                    ))}
-                  </div>
-                )}
+                      ))}
+                    </div>
+                  )}
+                </div>
               </ScrollArea>
             </div>
 
             {/* Edit/Create Form */}
-            <div className="flex flex-col">
+            <div className="flex flex-col min-h-0">
               {(isCreating || editingPrompt) ? (
-                <div className="flex flex-col h-full">
+                <div className="flex flex-col h-full min-h-0">
                   <div className="flex justify-between items-center mb-4">
                     <h3 className="font-semibold text-foreground">
                       {isCreating ? 'Create New Prompt' : 'Edit Prompt'}
@@ -387,46 +389,48 @@ export const PromptLibrary: React.FC<PromptLibraryProps> = ({
                     </Button>
                   </div>
 
-                  <div className="flex-1 flex flex-col space-y-4">
-                    <div>
-                      <label className="text-sm font-medium text-foreground">Name *</label>
-                      <Input
-                        value={formData.name}
-                        onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                        placeholder="e.g., Customer Support Assistant"
-                        className="mt-1"
-                      />
-                    </div>
+                  <ScrollArea className="flex-1 max-h-[500px]">
+                    <div className="flex flex-col space-y-4 pr-4">
+                      <div>
+                        <label className="text-sm font-medium text-foreground">Name *</label>
+                        <Input
+                          value={formData.name}
+                          onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                          placeholder="e.g., Customer Support Assistant"
+                          className="mt-1"
+                        />
+                      </div>
 
-                    <div>
-                      <label className="text-sm font-medium text-foreground">Description</label>
-                      <Input
-                        value={formData.description}
-                        onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
-                        placeholder="Brief description of this prompt's purpose"
-                        className="mt-1"
-                      />
-                    </div>
+                      <div>
+                        <label className="text-sm font-medium text-foreground">Description</label>
+                        <Input
+                          value={formData.description}
+                          onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                          placeholder="Brief description of this prompt's purpose"
+                          className="mt-1"
+                        />
+                      </div>
 
-                    <div className="flex-1 flex flex-col">
-                      <label className="text-sm font-medium text-foreground">System Prompt *</label>
-                      <Textarea
-                        value={formData.content}
-                        onChange={(e) => setFormData(prev => ({ ...prev, content: e.target.value }))}
-                        placeholder="You are a helpful assistant that..."
-                        className="mt-1 flex-1 resize-none min-h-[200px]"
-                      />
+                      <div className="flex flex-col">
+                        <label className="text-sm font-medium text-foreground">System Prompt *</label>
+                        <Textarea
+                          value={formData.content}
+                          onChange={(e) => setFormData(prev => ({ ...prev, content: e.target.value }))}
+                          placeholder="You are a helpful assistant that..."
+                          className="mt-1 resize-none min-h-[300px]"
+                        />
+                      </div>
                     </div>
+                  </ScrollArea>
 
-                    <div className="flex justify-end space-x-3 pt-2">
-                      <Button variant="outline" onClick={cancelEditing}>
-                        Cancel
-                      </Button>
-                      <Button onClick={isCreating ? createPrompt : updatePrompt}>
-                        <Save className="h-4 w-4 mr-2" />
-                        {isCreating ? 'Create' : 'Update'}
-                      </Button>
-                    </div>
+                  <div className="flex justify-end space-x-3 pt-4 flex-shrink-0">
+                    <Button variant="outline" onClick={cancelEditing}>
+                      Cancel
+                    </Button>
+                    <Button onClick={isCreating ? createPrompt : updatePrompt}>
+                      <Save className="h-4 w-4 mr-2" />
+                      {isCreating ? 'Create' : 'Update'}
+                    </Button>
                   </div>
                 </div>
               ) : (
