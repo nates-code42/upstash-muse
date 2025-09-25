@@ -100,13 +100,83 @@ const SearchInterface = () => {
   const loadConfigFromRedis = async () => {
     try {
       setIsLoadingConfig(true);
-      const savedConfig = await redisGet('search-assistant-config');
-      if (savedConfig && typeof savedConfig === 'object') {
-        setConfig(prev => ({ ...prev, ...savedConfig as Partial<typeof config> }));
-        console.log('Loaded config from Redis:', savedConfig);
+      console.log('Loading configuration from Redis...');
+      
+      const savedConfigString = await redisGet('search-assistant-config');
+      console.log('Raw Redis response:', savedConfigString);
+      
+      if (savedConfigString) {
+        let parsedConfig;
+        
+        // Parse JSON string if it's a string, or use directly if it's already an object
+        if (typeof savedConfigString === 'string') {
+          try {
+            parsedConfig = JSON.parse(savedConfigString);
+          } catch (parseError) {
+            console.error('Failed to parse config JSON:', parseError);
+            toast({
+              title: "Configuration Error",
+              description: "Failed to parse saved configuration. Please reconfigure.",
+              variant: "destructive"
+            });
+            setShowConfig(true);
+            return;
+          }
+        } else if (typeof savedConfigString === 'object') {
+          parsedConfig = savedConfigString;
+        }
+        
+        // Validate critical fields
+        const requiredFields = ['upstashUrl', 'upstashToken', 'openaiApiKey', 'searchIndex'];
+        const missingFields = requiredFields.filter(field => !parsedConfig[field]);
+        
+        if (missingFields.length > 0) {
+          console.warn('Missing configuration fields:', missingFields);
+          toast({
+            title: "Incomplete Configuration",
+            description: `Missing: ${missingFields.join(', ')}. Please complete your setup.`,
+            variant: "destructive"
+          });
+          setShowConfig(true);
+        }
+        
+        // Merge with existing config, keeping defaults for missing fields
+        setConfig(prev => ({ 
+          ...prev, 
+          ...parsedConfig,
+          // Ensure critical fields are not empty strings
+          upstashUrl: parsedConfig.upstashUrl || prev.upstashUrl,
+          upstashToken: parsedConfig.upstashToken || prev.upstashToken,
+          openaiApiKey: parsedConfig.openaiApiKey || prev.openaiApiKey,
+          searchIndex: parsedConfig.searchIndex || prev.searchIndex,
+          openaiModel: parsedConfig.openaiModel || prev.openaiModel,
+          systemPrompt: parsedConfig.systemPrompt || prev.systemPrompt,
+          contentFields: parsedConfig.contentFields || prev.contentFields
+        }));
+        
+        console.log('Successfully loaded and validated config:', parsedConfig);
+        
+        toast({
+          title: "Configuration Loaded",
+          description: "Settings loaded from previous session"
+        });
+      } else {
+        console.log('No saved configuration found, using defaults');
+        setShowConfig(true);
+        toast({
+          title: "First Time Setup",
+          description: "Please configure your API credentials to get started",
+          variant: "default"
+        });
       }
     } catch (error) {
       console.error('Failed to load config from Redis:', error);
+      toast({
+        title: "Configuration Error",
+        description: "Failed to load saved settings. Please reconfigure.",
+        variant: "destructive"
+      });
+      setShowConfig(true);
     } finally {
       setIsLoadingConfig(false);
     }
@@ -114,12 +184,31 @@ const SearchInterface = () => {
 
   const saveConfigToRedis = async () => {
     try {
-      await redisSet('search-assistant-config', config);
+      // Validate configuration before saving
+      const requiredFields = ['upstashUrl', 'upstashToken', 'openaiApiKey', 'searchIndex'];
+      const missingFields = requiredFields.filter(field => !config[field as keyof typeof config]);
+      
+      if (missingFields.length > 0) {
+        toast({
+          title: "Incomplete Configuration",
+          description: `Please fill in: ${missingFields.join(', ')}`,
+          variant: "destructive"
+        });
+        return;
+      }
+      
+      // Store as JSON string to ensure consistent format
+      await redisSet('search-assistant-config', JSON.stringify(config));
+      
       toast({
         title: "Configuration saved",
         description: "Your settings have been stored securely in Redis"
       });
       console.log('Saved config to Redis:', config);
+      
+      // Close config panel after successful save
+      setShowConfig(false);
+      
     } catch (error) {
       console.error('Failed to save config to Redis:', error);
       toast({
