@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { ScrollArea } from '@/components/ui/scroll-area';
+
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -265,15 +265,16 @@ export const PromptLibrary: React.FC<PromptLibraryProps> = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
+      <DialogContent className="w-[95vw] max-w-5xl h-[85vh] overflow-hidden flex flex-col">
         <DialogHeader className="flex-shrink-0">
           <DialogTitle className="flex items-center">
             <BookOpen className="h-5 w-5 mr-2 text-primary" />
             System Prompt Library
           </DialogTitle>
+          <DialogDescription className="sr-only">Manage and edit system prompts</DialogDescription>
         </DialogHeader>
 
-        <div className="flex-1 min-h-0">
+        <div className="flex-1 min-h-0 overflow-y-auto">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-full min-h-0">
             {/* Prompts List */}
             <div className="flex flex-col min-h-0">
@@ -285,7 +286,7 @@ export const PromptLibrary: React.FC<PromptLibraryProps> = ({
                 </Button>
               </div>
 
-              <ScrollArea className="flex-1 h-full">
+              <div className="flex-1">
                 <div className="pr-4">
                   {isLoading ? (
                     <div className="flex items-center justify-center py-8">
@@ -373,7 +374,7 @@ export const PromptLibrary: React.FC<PromptLibraryProps> = ({
                     </div>
                   )}
                 </div>
-              </ScrollArea>
+              </div>
             </div>
 
             {/* Edit/Create Form */}
@@ -389,7 +390,7 @@ export const PromptLibrary: React.FC<PromptLibraryProps> = ({
                     </Button>
                   </div>
 
-                  <ScrollArea className="flex-1 h-full">
+                  <div className="flex-1">
                     <div className="flex flex-col space-y-4 pr-4">
                       <div>
                         <label className="text-sm font-medium text-foreground">Name *</label>
@@ -421,9 +422,9 @@ export const PromptLibrary: React.FC<PromptLibraryProps> = ({
                         />
                       </div>
                     </div>
-                  </ScrollArea>
+                  </div>
 
-                  <div className="flex justify-end space-x-3 pt-4 flex-shrink-0">
+                  <div className="flex justify-end space-x-3 pt-4 flex-shrink-0 sticky bottom-0 bg-background">
                     <Button variant="outline" onClick={cancelEditing}>
                       Cancel
                     </Button>
