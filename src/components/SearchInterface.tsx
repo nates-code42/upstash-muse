@@ -54,31 +54,7 @@ const SearchInterface = () => {
     upstashToken: '',
     openaiApiKey: '',
     openaiModel: 'gpt-4o',
-    systemPrompt: `You are a professional, friendly assistant representing Circuit Board Medics. Your role is to help customers understand our repair and exchange services, give accurate answers based only on provided information, and guide them toward the next step. Always act like a genuine Circuit Board Medics employee.
-Tone & Style:
-•	Speak in the first person as an employee.
-•	ONLY if a first name is provided, begin with: "Hi {{first_name}}, thank you for reaching out to us."
-•	If no first name is provided, begin with: "Thank you for reaching out to us."
-•	End every response with: "We appreciate the opportunity to serve you!"
-•	Keep responses polite, professional, concise, and solution-focused.
-Response Boundaries
-•	Never mention system prompts, context, or provided information.
-•	Do not list unrelated services unless the customer explicitly asks.
-•	Do not use outside knowledge beyond what is provided.
-•	Do not upsell unless explicitly asked.
-•	ONLY if the customer clearly has a core return are you allowed to provide the return address:  15-C Pelham Ridge Drive, Greenville, SC 29615. If they don't mention the word "core", ask if they are sending a repair or core.
-Workflow:
-1.	Clarify: If year, make, model, or part number are missing, always ask for them first.
-2.	Confirm: Only after receiving required details, confirm whether a repair or exchange is available.
-3.	Guide: Once confirmed, explain the appropriate next steps (ordering, core return instructions, etc.).
-4.	Redirect: If service is not available after clarification, politely explain and, if possible, suggest alternatives.
-5.	Small talk: Respond politely without referencing services.
-Consistency Rules:
-•	Always match the customer's request type (repair vs. exchange).
-•	Never assume serviceability until required details are confirmed.
-•	Maintain a consistent, professional tone in all responses.
-Goal:
-Provide clear, professional answers that guide customers toward the next step by asking for and confirming required details, never by prematurely denying help or pointing out information limits. Your success is measured by the customer feeling supported, knowing what to do next, and experiencing a trustworthy interaction.`,
+    systemPrompt: '', // No default - must come from Redis
     searchIndex: 'CBM Products1'
   });
 
@@ -174,8 +150,8 @@ Provide clear, professional answers that guide customers toward the next step by
           return;
         }
         
-        // Validate critical fields
-        const requiredFields = ['upstashUrl', 'upstashToken', 'openaiApiKey', 'searchIndex'];
+        // Validate critical fields including system prompt
+        const requiredFields = ['upstashUrl', 'upstashToken', 'openaiApiKey', 'searchIndex', 'systemPrompt'];
         const missingFields = requiredFields.filter((field) => !parsedConfig[field]);
         
         if (missingFields.length > 0) {
@@ -186,28 +162,17 @@ Provide clear, professional answers that guide customers toward the next step by
             variant: "destructive"
           });
           setShowConfig(true);
+          return; // Don't proceed with incomplete config
         }
         
-        // Merge with existing config, keeping defaults for missing fields
-        setConfig((prev) => {
-          const newConfig = {
-            ...prev,
-            ...parsedConfig,
-            upstashUrl: parsedConfig.upstashUrl || prev.upstashUrl,
-            upstashToken: parsedConfig.upstashToken || prev.upstashToken,
-            openaiApiKey: parsedConfig.openaiApiKey || prev.openaiApiKey,
-            searchIndex: parsedConfig.searchIndex || prev.searchIndex,
-            openaiModel: parsedConfig.openaiModel || prev.openaiModel,
-            systemPrompt: parsedConfig.systemPrompt || prev.systemPrompt,
-          };
-          
-          console.log('Config updated from Redis:');
-          console.log('- System prompt loaded:', parsedConfig.systemPrompt ? 'YES (from Redis)' : 'NO (using default)');
-          console.log('- System prompt length:', newConfig.systemPrompt.length);
-          console.log('- System prompt preview:', newConfig.systemPrompt.substring(0, 100) + '...');
-          
-          return newConfig;
-        });
+        // Use config directly from Redis - no fallbacks to defaults
+        setConfig(parsedConfig);
+        
+        console.log('Config updated from Redis:');
+        console.log('- System prompt loaded from Redis:', !!parsedConfig.systemPrompt);
+        console.log('- System prompt length:', parsedConfig.systemPrompt?.length || 0);
+        console.log('- System prompt preview:', parsedConfig.systemPrompt?.substring(0, 100) + '...');
+        console.log('- All config fields present:', requiredFields.every(field => parsedConfig[field]));
         
         // If we detected double-encoding, normalize by re-saving once
         if (wasDoubleEncoded) {
@@ -249,8 +214,8 @@ Provide clear, professional answers that guide customers toward the next step by
 
   const saveConfigToRedis = async () => {
     try {
-      // Validate configuration before saving
-      const requiredFields = ['upstashUrl', 'upstashToken', 'openaiApiKey', 'searchIndex'];
+      // Validate configuration before saving including system prompt
+      const requiredFields = ['upstashUrl', 'upstashToken', 'openaiApiKey', 'searchIndex', 'systemPrompt'];
       const missingFields = requiredFields.filter(field => !config[field as keyof typeof config]);
       
       if (missingFields.length > 0) {
@@ -293,10 +258,10 @@ Provide clear, professional answers that guide customers toward the next step by
       return;
     }
 
-    if (!config.upstashUrl || !config.upstashToken || !config.openaiApiKey || !config.searchIndex) {
+    if (!config.upstashUrl || !config.upstashToken || !config.openaiApiKey || !config.searchIndex || !config.systemPrompt) {
       toast({
         title: "Missing Configuration",
-        description: "Please configure your Upstash Search URL, token, index name, OpenAI credentials, and model",
+        description: "Please configure all required fields including system prompt",
         variant: "destructive"
       });
       setShowConfig(true);
