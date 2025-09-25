@@ -55,54 +55,63 @@ serve(async (req) => {
         };
 
         try {
-          // Initialize Redis and Search clients
-          const redisConfig = {
-            url: Deno.env.get('UPSTASH_REDIS_REST_URL')!,
-            token: Deno.env.get('UPSTASH_REDIS_REST_TOKEN')!
-          };
-          const redis = new UpstashRedis(redisConfig);
-          const upstashSearch = new UpstashSearch(
-            Deno.env.get('UPSTASH_SEARCH_URL')!,
-            Deno.env.get('UPSTASH_SEARCH_TOKEN')!
-          );
+          // Initialize Redis and Search clients (with graceful fallbacks)
+          const redisUrl = Deno.env.get('UPSTASH_REDIS_REST_URL');
+          const redisToken = Deno.env.get('UPSTASH_REDIS_REST_TOKEN');
+          const searchUrl = Deno.env.get('UPSTASH_SEARCH_URL');
+          const searchToken = Deno.env.get('UPSTASH_SEARCH_TOKEN');
 
-          // Get configuration and prompts
-          const configData = await redis.get('search_config');
-          const config = smartParse(configData) || {};
-          console.log('🔧 Configuration loaded:', config);
+          const hasRedis = !!redisUrl && !!redisToken;
+          const hasSearch = !!searchUrl && !!searchToken;
 
-          const promptsData = await redis.get('system_prompts');
-          const prompts: SystemPrompt[] = smartParse(promptsData) || [];
-
-          // Get active prompt
-          const activePromptId = requestBody.promptId || config.activePromptId || 'default';
-          const activePrompt = prompts.find(p => p.id === activePromptId) || prompts[0];
-          
-          if (!activePrompt) {
-            sendEvent('error', { message: 'No active prompt found' });
-            controller.close();
-            return;
+          const redis = hasRedis ? new UpstashRedis({ url: redisUrl!, token: redisToken! }) : null;
+          const upstashSearch = hasSearch ? new UpstashSearch(searchUrl!, searchToken!) : null;
+          // Get configuration and prompts (guarded if Redis is unavailable)
+          let config: any = {};
+          let prompts: SystemPrompt[] = [];
+          if (redis) {
+            try {
+              const configData = await redis.get('search_config');
+              config = smartParse(configData) || {};
+              console.log('🔧 Configuration loaded:', config);
+            } catch (e) {
+              console.error('Redis GET error (config):', e);
+            }
+            try {
+              const promptsData = await redis.get('system_prompts');
+              prompts = smartParse(promptsData) || [];
+            } catch (e) {
+              console.error('Redis GET error (prompts):', e);
+            }
+          } else {
+            console.warn('Upstash Redis not configured; using defaults');
           }
+          // Get active prompt (fallback to default prompt)
+          const defaultPrompt: SystemPrompt = {
+            id: 'default',
+            name: 'Default',
+            content: 'You are a helpful assistant. Use provided sources when available.'
+          };
+          const activePromptId = requestBody.promptId || (config.activePromptId as string) || 'default';
+          const activePrompt = prompts.find(p => p.id === activePromptId) || prompts[0] || defaultPrompt;
 
           console.log('🎯 Using prompt:', activePrompt.name);
 
-          // Perform search
+          // Perform search (skip gracefully if Upstash Search is unavailable)
           const searchIndex = requestBody.searchIndex || config.searchIndex || 'cbm-products';
           const maxResults = requestBody.maxResults || config.maxResults || 5;
 
-          console.log(`🔍 Searching in index: ${searchIndex} with query: "${requestBody.query}"`);
-          
-          const searchResults = await upstashSearch.search(requestBody.query, {
-            limit: maxResults
-          });
-          console.log(`📊 Search found ${searchResults.length} results`);
-
-          if (searchResults.length === 0) {
-            sendEvent('start', { sources: [] });
-            sendEvent('content', { content: "I couldn't find any relevant information in our knowledge base to answer your question. Could you try rephrasing your question or asking about something else?" });
-            sendEvent('done', { usage: { completion_tokens: 0 } });
-            controller.close();
-            return;
+          let searchResults: any[] = [];
+          if (upstashSearch) {
+            console.log(`🔍 Searching in index: ${searchIndex} with query: "${requestBody.query}"`);
+            try {
+              searchResults = await upstashSearch.search(requestBody.query, { limit: maxResults });
+              console.log(`📊 Search found ${searchResults.length} results`);
+            } catch (e) {
+              console.error('Search error:', e);
+            }
+          } else {
+            console.warn('Upstash Search not configured; proceeding without search');
           }
 
           // Send sources immediately
@@ -110,7 +119,13 @@ serve(async (req) => {
           sendEvent('start', { sources });
 
           // Generate streaming response
-          const openaiClient = new OpenAIClient(config.openaiApiKey);
+          const openaiApiKey = (config && (config.openaiApiKey as string)) || Deno.env.get('OPENAI_API_KEY');
+          if (!openaiApiKey) {
+            sendEvent('error', { message: 'OpenAI API key not configured. Set it in Redis (search_config.openaiApiKey) or as OPENAI_API_KEY secret.' });
+            controller.close();
+            return;
+          }
+          const openaiClient = new OpenAIClient(openaiApiKey);
           const model = requestBody.model || config.model || 'gpt-4o-mini';
 
           console.log(`🤖 Generating streaming response with model: ${model}`);
