@@ -3,9 +3,6 @@ project_id = "myyyvzkhlxcxlipionvf"
 [functions.chat-search]
 verify_jwt = false
 
-[functions.chat-search-stream]
-verify_jwt = false
-
 [functions.prompts]
 verify_jwt = false
 
