@@ -55,8 +55,7 @@ const SearchInterface = () => {
     openaiApiKey: '',
     openaiModel: 'gpt-4o',
     systemPrompt: 'You are a helpful AI assistant. Based on the search results provided, give a comprehensive and accurate response to the user\'s query. Only use information from the search results.',
-    searchIndex: 'CBM Products1',
-    contentFields: 'Name,Description'
+    searchIndex: 'CBM Products1'
   });
 
   // Load configuration from Redis on component mount
@@ -175,7 +174,6 @@ const SearchInterface = () => {
           searchIndex: parsedConfig.searchIndex || prev.searchIndex,
           openaiModel: parsedConfig.openaiModel || prev.openaiModel,
           systemPrompt: parsedConfig.systemPrompt || prev.systemPrompt,
-          contentFields: parsedConfig.contentFields || prev.contentFields,
         }));
         
         // If we detected double-encoding, normalize by re-saving once
@@ -298,36 +296,28 @@ const SearchInterface = () => {
         throw new Error(`Upstash Search failed: ${searchError instanceof Error ? searchError.message : 'Unknown error'}`);
       }
 
-      // Step 2: Generate OpenAI response with smart context management
+      // Step 2: Generate OpenAI response with ALL search result data
       const formattedResults = searchResults.map((result, index) => {
-        // Extract only relevant fields to reduce token usage
+        // Include ALL fields from the search result
         const content = result.content || {};
-        const relevantFields: string[] = [];
+        const metadata = result.metadata || {};
         
-        // Add specified content fields
-        const fields = config.contentFields.split(',').map(f => f.trim());
-        fields.forEach(field => {
-          if (content[field]) {
-            relevantFields.push(`${field}: ${content[field]}`);
-          }
-        });
+        // Format all content fields
+        const contentFields = Object.entries(content)
+          .map(([key, value]) => `${key}: ${value}`)
+          .join('\n');
         
-        return `Result ${index + 1} (Score: ${result.score?.toFixed(2) || 'N/A'}):\n${relevantFields.join('\n')}`;
+        // Format all metadata fields if they exist
+        const metadataFields = Object.keys(metadata).length > 0 
+          ? '\nMetadata:\n' + Object.entries(metadata)
+              .map(([key, value]) => `${key}: ${value}`)
+              .join('\n')
+          : '';
+        
+        return `Result ${index + 1} (ID: ${result.id}, Score: ${result.score?.toFixed(2) || 'N/A'}):\n${contentFields}${metadataFields}`;
       }).join('\n\n');
 
-      // Estimate tokens and truncate if necessary (rough estimate: 4 chars ≈ 1 token)
-      const systemPromptTokens = Math.ceil(config.systemPrompt.length / 4);
-      const queryTokens = Math.ceil(query.length / 4);
-      const maxContextTokens = 6000; // Conservative limit for GPT-4o (8k context)
-      const reservedTokens = systemPromptTokens + queryTokens + 1000; // Reserve for response
-      const availableTokens = maxContextTokens - reservedTokens;
-      const maxContextChars = availableTokens * 4;
-
-      let contextText = formattedResults;
-      if (contextText.length > maxContextChars) {
-        contextText = contextText.substring(0, maxContextChars) + '\n\n[Context truncated to fit model limits...]';
-        console.log('Context truncated to fit model limits');
-      }
+      const contextText = formattedResults;
 
       const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
@@ -347,7 +337,7 @@ const SearchInterface = () => {
               content: query
             }
           ],
-          max_tokens: 1500,
+          max_tokens: 4000,
           temperature: 0.7
         })
       });
@@ -578,18 +568,6 @@ const SearchInterface = () => {
                   onChange={(e) => setConfig(prev => ({ ...prev, searchIndex: e.target.value }))}
                   className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
                   placeholder="my-search-index"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground">
-                  Content Fields
-                </label>
-                <input
-                  type="text"
-                  value={config.contentFields}
-                  onChange={(e) => setConfig(prev => ({ ...prev, contentFields: e.target.value }))}
-                  className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
-                  placeholder="title,content,description"
                 />
               </div>
             </div>
