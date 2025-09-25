@@ -10,6 +10,7 @@ import { Search, Settings, MessageSquare, Loader2, Database, Brain, Send, Copy, 
 import { toast } from '@/hooks/use-toast';
 import { Search as UpstashSearch } from '@upstash/search';
 import { parseMarkdownLinks } from '@/lib/utils';
+import logoImage from '@/assets/circuit-board-medics-logo.png';
 
 interface SearchResult {
   id: string;
@@ -543,7 +544,7 @@ Please provide a comprehensive answer based on this information.`;
       {/* Header */}
       <header className="bg-background/95 backdrop-blur-sm border-b border-border/40 px-6 py-4 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto flex justify-between items-center">
-          <h1 className="text-2xl font-semibold text-foreground">AI Search</h1>
+          <img src={logoImage} alt="Circuit Board Medics" className="h-8" />
           <Button
             variant="ghost"
             onClick={() => setShowConfig(!showConfig)}
