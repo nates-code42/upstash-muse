@@ -384,27 +384,37 @@ Please provide a comprehensive answer based on this information.`;
       console.log('Is Circuit Board Medics prompt?:', config.systemPrompt.includes('Circuit Board Medics'));
       console.log('Formatted user message preview:', formattedUserMessage.substring(0, 300) + '...');
 
+      // Use max_completion_tokens for newer models, max_tokens for older ones
+      const isNewerModel = config.openaiModel === 'gpt-5-mini' || config.openaiModel === 'gpt-4.1-mini';
+      const requestBody: any = {
+        model: config.openaiModel,
+        messages: [
+          {
+            role: 'system',
+            content: config.systemPrompt
+          },
+          {
+            role: 'user',
+            content: formattedUserMessage
+          }
+        ],
+        temperature: 0.7
+      };
+      
+      // Add the appropriate token limit parameter based on model
+      if (isNewerModel) {
+        requestBody.max_completion_tokens = 4000;
+      } else {
+        requestBody.max_tokens = 4000;
+      }
+
       const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${config.openaiApiKey}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          model: config.openaiModel,
-          messages: [
-            {
-              role: 'system',
-              content: config.systemPrompt
-            },
-            {
-              role: 'user',
-              content: formattedUserMessage
-            }
-          ],
-          max_tokens: 4000,
-          temperature: 0.7
-        })
+        body: JSON.stringify(requestBody)
       });
 
       if (!openaiResponse.ok) {
