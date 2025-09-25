@@ -1,1 +1,10 @@
 project_id = "myyyvzkhlxcxlipionvf"
+
+[functions.chat-search]
+verify_jwt = false
+
+[functions.prompts]
+verify_jwt = false
+
+[functions.config]
+verify_jwt = false

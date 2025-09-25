@@ -50,6 +50,88 @@ export type Database = {
         }
         Relationships: []
       }
+      api_keys: {
+        Row: {
+          created_at: string | null
+          expires_at: string | null
+          id: string
+          key_hash: string
+          key_prefix: string
+          last_used: string | null
+          name: string
+          rate_limit_per_hour: number | null
+          status: Database["public"]["Enums"]["api_key_status"] | null
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          expires_at?: string | null
+          id?: string
+          key_hash: string
+          key_prefix: string
+          last_used?: string | null
+          name: string
+          rate_limit_per_hour?: number | null
+          status?: Database["public"]["Enums"]["api_key_status"] | null
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          expires_at?: string | null
+          id?: string
+          key_hash?: string
+          key_prefix?: string
+          last_used?: string | null
+          name?: string
+          rate_limit_per_hour?: number | null
+          status?: Database["public"]["Enums"]["api_key_status"] | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "api_keys_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      api_usage: {
+        Row: {
+          api_key_id: string | null
+          created_at: string | null
+          endpoint: string
+          hour_bucket: string
+          id: string
+          request_count: number | null
+        }
+        Insert: {
+          api_key_id?: string | null
+          created_at?: string | null
+          endpoint: string
+          hour_bucket: string
+          id?: string
+          request_count?: number | null
+        }
+        Update: {
+          api_key_id?: string | null
+          created_at?: string | null
+          endpoint?: string
+          hour_bucket?: string
+          id?: string
+          request_count?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "api_usage_api_key_id_fkey"
+            columns: ["api_key_id"]
+            isOneToOne: false
+            referencedRelation: "api_keys"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       applications: {
         Row: {
           brand: string | null
@@ -973,6 +1055,10 @@ export type Database = {
           similarity: number
         }[]
       }
+      record_api_usage: {
+        Args: { endpoint_name: string; key_id: string }
+        Returns: undefined
+      }
       set_googleads_cleanup_threshold: {
         Args: { new_threshold: number }
         Returns: string
@@ -988,6 +1074,21 @@ export type Database = {
       sparsevec_typmod_in: {
         Args: { "": unknown[] }
         Returns: number
+      }
+      validate_api_key: {
+        Args: {
+          api_key_hash: string
+          endpoint_name: string
+          rate_limit_window?: unknown
+        }
+        Returns: {
+          current_usage: number
+          is_valid: boolean
+          key_id: string
+          rate_limit: number
+          rate_limit_exceeded: boolean
+          user_id: string
+        }[]
       }
       vector_avg: {
         Args: { "": number[] }
@@ -1015,7 +1116,7 @@ export type Database = {
       }
     }
     Enums: {
-      [_ in never]: never
+      api_key_status: "active" | "inactive" | "revoked"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1142,6 +1243,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      api_key_status: ["active", "inactive", "revoked"],
+    },
   },
 } as const

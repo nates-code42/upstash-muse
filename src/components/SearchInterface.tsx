@@ -7,12 +7,13 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Search, Settings, MessageSquare, Loader2, Database, Brain, Send, Copy, ExternalLink, Bot, User, BookOpen } from 'lucide-react';
+import { Search, Settings, MessageSquare, Loader2, Database, Brain, Send, Copy, ExternalLink, Bot, User, BookOpen, FileText } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { Search as UpstashSearch } from '@upstash/search';
 import { parseMarkdownLinks } from '@/lib/utils';
 import logoImage from '@/assets/circuit-board-medics-logo.png';
 import { PromptLibrary, type SystemPrompt } from './PromptLibrary';
+import { ApiKeyManager } from './ApiKeyManager';
 
 interface SearchResult {
   id: string;
@@ -752,6 +753,14 @@ Please provide a comprehensive answer based on this information.`;
               <Settings className="h-4 w-4 mr-2" />
               Configure
             </Button>
+            <Button
+              variant="ghost"
+              onClick={() => window.open('/docs', '_blank')}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <FileText className="h-4 w-4 mr-2" />
+              Docs
+            </Button>
           </div>
         </div>
       </header>
@@ -871,6 +880,12 @@ Please provide a comprehensive answer based on this information.`;
                 </div>
               )}
             </div>
+            
+            {/* API Key Management Section */}
+            <div className="mt-6">
+              <ApiKeyManager />
+            </div>
+            
             <div className="mt-6 flex justify-end">
               <Button onClick={saveConfigToRedis} className="px-6">
                 Save Configuration
