@@ -283,11 +283,30 @@ const SearchInterface = () => {
         const index = client.index(config.searchIndex);
         const searchResponse = await index.search({
           query: query,
-          limit: 10,
+          limit: 100, // Retrieve up to 100 results for better coverage
         });
 
-        searchResults = searchResponse || [];
-        console.log('Upstash Search response:', searchResponse);
+        const allResults = searchResponse || [];
+        
+        // Debug: Log initial retrieval stats
+        console.log('=== Search Result Filtering Debug ===');
+        console.log('Total results received from Upstash:', allResults.length);
+        if (allResults.length > 0) {
+          const scores = allResults.map(r => r.score || 0);
+          console.log('Score range:', { min: Math.min(...scores), max: Math.max(...scores) });
+        }
+        
+        // Filter to top 10 results by relevance score (descending)
+        searchResults = allResults
+          .sort((a, b) => (b.score || 0) - (a.score || 0))
+          .slice(0, 10);
+        
+        console.log('Top 10 results selected for AI context:', searchResults.length);
+        if (searchResults.length > 0) {
+          const topScores = searchResults.map(r => r.score || 0);
+          console.log('Top 10 score range:', { min: Math.min(...topScores), max: Math.max(...topScores) });
+        }
+        console.log('Results filtered out:', allResults.length - searchResults.length);
         
       } catch (searchError) {
         console.error('Upstash Search error:', searchError);
