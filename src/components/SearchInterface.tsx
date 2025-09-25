@@ -11,6 +11,8 @@ import { Search, Settings, MessageSquare, Loader2, Database, Brain, Send, Copy, 
 import { toast } from '@/hooks/use-toast';
 import { Search as UpstashSearch } from '@upstash/search';
 import { parseMarkdownLinks } from '@/lib/utils';
+import { StreamingClient, StreamingEvent } from '@/utils/streamingClient';
+import StreamingLoader from './StreamingLoader';
 import logoImage from '@/assets/circuit-board-medics-logo.png';
 import { PromptLibrary, type SystemPrompt } from './PromptLibrary';
 import { ApiKeyManager } from './ApiKeyManager';
@@ -42,6 +44,8 @@ const SearchInterface = () => {
   const [query, setQuery] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [streamingContent, setStreamingContent] = useState('');
   const [showConfig, setShowConfig] = useState(false);
   const [showPromptLibrary, setShowPromptLibrary] = useState(false);
   const [isLoadingConfig, setIsLoadingConfig] = useState(true);
@@ -51,6 +55,7 @@ const SearchInterface = () => {
   const [promptsReady, setPromptsReady] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const streamingClient = React.useRef(new StreamingClient());
   
   // Redis REST API configuration for browser use
   const redisConfig = {
@@ -411,58 +416,89 @@ const SearchInterface = () => {
   };
 
   const handleSearch = async () => {
-    if (!query.trim()) {
-      toast({
-        title: "Please enter a search query",
-        variant: "destructive"
-      });
-      return;
-    }
+    if (!query.trim()) return;
 
-    // Check if prompts are still loading
-    if (!promptsReady) {
-      toast({
-        title: "Please wait",
-        description: "Still loading system prompts...",
-        variant: "default"
-      });
-      return;
-    }
-
-    if (!config.upstashUrl || !config.upstashToken || !config.openaiApiKey || !config.searchIndex) {
-      const activePrompt = getActivePrompt();
-      const missing = [];
-      if (!config.upstashUrl) missing.push('Upstash URL');
-      if (!config.upstashToken) missing.push('Upstash Token'); 
-      if (!config.openaiApiKey) missing.push('OpenAI API Key');
-      if (!config.searchIndex) missing.push('Search Index');
-      if (!activePrompt) missing.push('System Prompt');
-      
-      toast({
-        title: "Missing Configuration",
-        description: `Please configure: ${missing.join(', ')}`,
-        variant: "destructive"
-      });
-      if (!activePrompt) {
-        setShowPromptLibrary(true);
-      } else {
-        setShowConfig(true);
-      }
-      return;
-    }
-
-    const activePrompt = getActivePrompt();
-    if (!activePrompt) {
-      toast({
-        title: "No System Prompt",
-        description: "Please select a system prompt from the library",
-        variant: "destructive"
-      });
-      setShowPromptLibrary(true);
-      return;
-    }
-
+    const currentQuery = query.trim();
+    setQuery('');
     setIsLoading(true);
+    setIsStreaming(true);
+    setStreamingContent('');
+    setActiveSources([]);
+
+    // Cancel any existing stream
+    streamingClient.current.cancel();
+
+    try {
+      // Validate configuration
+      if (!config.openaiApiKey) {
+        throw new Error('Please configure your API key in the configuration panel');
+      }
+
+      const activePrompt = getActivePrompt();
+      if (!activePrompt) {
+        throw new Error('Please select a system prompt');
+      }
+
+      // Add user message immediately
+      const userMessage: Message = {
+        id: Date.now().toString(),
+        query: currentQuery,
+        response: '',
+        timestamp: new Date(),
+        searchResults: []
+      };
+      
+      setMessages(prev => [...prev, userMessage]);
+
+      // Stream the response
+      let fullResponse = '';
+      for await (const event of streamingClient.current.streamChatSearch(
+        currentQuery,
+        config.openaiApiKey,
+        {
+          promptId: activePrompt.id,
+          searchIndex: config.searchIndex,
+          maxResults: 10,
+          model: config.openaiModel
+        }
+      )) {
+        if (event.type === 'start' && event.sources) {
+          setActiveSources(event.sources);
+          setIsLoading(false);
+        } else if (event.type === 'content' && event.content) {
+          fullResponse += event.content;
+          setStreamingContent(fullResponse);
+        } else if (event.type === 'done') {
+          const aiMessage: Message = {
+            id: (Date.now() + 1).toString(),
+            query: currentQuery,
+            response: fullResponse,
+            timestamp: new Date(),
+            searchResults: []
+          };
+          setMessages(prev => [...prev, aiMessage]);
+          setStreamingContent('');
+          break;
+        } else if (event.type === 'error') {
+          throw new Error(event.message || 'Streaming error');
+        }
+      }
+    } catch (error) {
+      console.error('❌ Search error:', error);
+      const errorMessage: Message = {
+        id: (Date.now() + 2).toString(),
+        query: currentQuery,
+        response: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        timestamp: new Date(),
+        searchResults: []
+      };
+      setMessages(prev => [...prev, errorMessage]);
+    } finally {
+      setIsLoading(false);
+      setIsStreaming(false);
+      setStreamingContent('');
+    }
+  };
     
     try {
       let searchResults: SearchResult[] = [];
