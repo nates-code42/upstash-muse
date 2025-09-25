@@ -43,6 +43,7 @@ const SearchInterface = () => {
   const [isLoadingConfig, setIsLoadingConfig] = useState(true);
   const [activeSources, setActiveSources] = useState<Source[]>([]);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   
   // Redis REST API configuration for browser use
   const redisConfig = {
@@ -64,6 +65,17 @@ const SearchInterface = () => {
   useEffect(() => {
     loadConfigFromRedis();
   }, []);
+
+  // Auto-resize textarea
+  useEffect(() => {
+    if (textareaRef.current) {
+      const textarea = textareaRef.current;
+      textarea.style.height = 'auto';
+      const scrollHeight = textarea.scrollHeight;
+      const maxHeight = 200; // Max height in pixels
+      textarea.style.height = `${Math.min(scrollHeight, maxHeight)}px`;
+    }
+  }, [query]);
 
   const redisGet = async (key: string) => {
     try {
@@ -650,28 +662,6 @@ Please provide a comprehensive answer based on this information.`;
         <div className="flex gap-8 h-[calc(100vh-240px)]">
           {/* Chat Area */}
           <div className="flex-1 flex flex-col max-w-4xl">
-            {/* Search Input */}
-            <div className="mb-6">
-              <div className="relative">
-                <input
-                  type="text"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  onKeyPress={handleKeyPress}
-                  placeholder="Ask me anything..."
-                  className="w-full px-6 py-4 bg-background border border-border rounded-2xl shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all duration-200 text-lg placeholder:text-muted-foreground"
-                  disabled={isLoading}
-                />
-                <Button
-                  onClick={handleSearch}
-                  disabled={isLoading || !query.trim()}
-                  className="absolute right-2 top-2 bottom-2 rounded-xl px-6 shadow-sm"
-                >
-                  <Send className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-
             {/* Chat Messages */}
             <div className="flex-1 overflow-hidden">
               <ScrollArea className="h-full">
@@ -774,6 +764,28 @@ Please provide a comprehensive answer based on this information.`;
                 )}
                 <div ref={chatEndRef} />
               </ScrollArea>
+            </div>
+            
+            {/* Search Input */}
+            <div className="mt-6">
+              <div className="relative">
+                <Textarea
+                  ref={textareaRef}
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyPress={handleKeyPress}
+                  placeholder="Ask me anything..."
+                  className="w-full px-6 py-4 bg-background border border-border rounded-2xl shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all duration-200 text-lg placeholder:text-muted-foreground resize-none min-h-[60px] max-h-[200px]"
+                  disabled={isLoading}
+                />
+                <Button
+                  onClick={handleSearch}
+                  disabled={isLoading || !query.trim()}
+                  className="absolute right-2 top-2 rounded-xl px-6 shadow-sm"
+                >
+                  <Send className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
           </div>
 
