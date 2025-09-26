@@ -65,8 +65,8 @@ export class OpenAIClient {
       };
 
       // Handle different model parameter requirements
-      if (model.startsWith('gpt-5') || model.startsWith('o3') || model.startsWith('o4')) {
-        // Newer models use max_completion_tokens and don't support temperature
+      if (model.startsWith('gpt-5') || model.startsWith('o3') || model.startsWith('o4') || model.startsWith('gpt-4.1')) {
+        // Newer models (GPT-5, O3, O4, GPT-4.1) use max_completion_tokens and don't support temperature
         requestBody.max_completion_tokens = 1000;
       } else {
         // Legacy models use max_tokens and support temperature
