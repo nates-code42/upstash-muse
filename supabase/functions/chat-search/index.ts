@@ -171,7 +171,8 @@ serve(async (req) => {
       requestData.query,
       selectedPrompt,
       searchResults,
-      model
+      model,
+      requestData.temperature
     );
 
     // Process search results into sources

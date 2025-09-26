@@ -6,6 +6,7 @@ export interface ChatSearchRequest {
   searchIndex?: string;
   maxResults?: number;
   model?: string;
+  temperature?: number;
 }
 
 export interface ChatSearchResponse {

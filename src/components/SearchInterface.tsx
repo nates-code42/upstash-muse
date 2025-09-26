@@ -1,3 +1,4 @@
+import { Slider } from '@/components/ui/slider';
 import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -65,7 +66,8 @@ const SearchInterface = () => {
     upstashToken: '',
     openaiApiKey: '',
     openaiModel: 'gpt-4.1-2025-04-14',
-    searchIndex: 'CBM Products1'
+    searchIndex: 'CBM Products1',
+    temperature: 0.7
   });
 
   // Load configuration and prompts from Redis on component mount
@@ -369,9 +371,9 @@ const SearchInterface = () => {
 
   const saveConfigToRedis = async () => {
     try {
-      // Validate configuration before saving (excluding system prompt)
-      const requiredFields = ['upstashUrl', 'upstashToken', 'openaiApiKey', 'searchIndex'];
-      const missingFields = requiredFields.filter(field => !config[field as keyof typeof config]);
+        // Validate configuration before saving (excluding system prompt)
+        const requiredFields = ['upstashUrl', 'upstashToken', 'openaiApiKey', 'searchIndex'];
+        const missingFields = requiredFields.filter(field => !config[field as keyof typeof config]);
       
       if (missingFields.length > 0) {
         toast({
@@ -584,10 +586,13 @@ Please provide a comprehensive answer based on this information.`;
       // Add the appropriate token limit parameter based on model
       if (isNewerModel) {
         requestBody.max_completion_tokens = 4000;
-        // Newer models only support default temperature (1)
+        // Try to add temperature, but handle gracefully if not supported
+        if (config.temperature !== undefined) {
+          requestBody.temperature = config.temperature;
+        }
       } else {
         requestBody.max_tokens = 4000;
-        requestBody.temperature = 0.7;
+        requestBody.temperature = config.temperature;
       }
 
       const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -827,6 +832,39 @@ Please provide a comprehensive answer based on this information.`;
                   <option value="gpt-4o-mini">gpt-4o-mini</option>
                   <option value="gpt-3.5-turbo">gpt-3.5-turbo</option>
                 </select>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">
+                  Temperature
+                </label>
+                <div className="space-y-2">
+                  <input
+                    type="range"
+                    min="0"
+                    max="2"
+                    step="0.1"
+                    value={config.temperature}
+                    onChange={(e) => setConfig(prev => ({ ...prev, temperature: parseFloat(e.target.value) }))}
+                    className="w-full"
+                  />
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-muted-foreground">Creative: {config.temperature}</span>
+                    <input
+                      type="number"
+                      min="0"
+                      max="2"
+                      step="0.1"
+                      value={config.temperature}
+                      onChange={(e) => setConfig(prev => ({ ...prev, temperature: parseFloat(e.target.value) || 0.7 }))}
+                      className="w-16 px-2 py-1 text-xs bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-primary/20"
+                    />
+                  </div>
+                  {(config.openaiModel.startsWith('gpt-4.1') || config.openaiModel.startsWith('gpt-5') || config.openaiModel.startsWith('o3') || config.openaiModel.startsWith('o4')) && (
+                    <p className="text-xs text-amber-600 dark:text-amber-400">
+                      ⚠️ {config.openaiModel} may use fixed temperature. Will attempt to apply setting.
+                    </p>
+                  )}
+                </div>
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium text-foreground">

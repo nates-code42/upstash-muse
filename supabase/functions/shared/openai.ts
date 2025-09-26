@@ -14,7 +14,8 @@ export class OpenAIClient {
     query: string,
     systemPrompt: string,
     searchResults: SearchResult[],
-    model: string = 'gpt-4o-mini'
+    model: string = 'gpt-4o-mini',
+    temperature?: number
   ): Promise<{ response: string; tokenCount: number }> {
     try {
       // Format search results for the AI context
@@ -66,12 +67,15 @@ export class OpenAIClient {
 
       // Handle different model parameter requirements
       if (model.startsWith('gpt-5') || model.startsWith('o3') || model.startsWith('o4') || model.startsWith('gpt-4.1')) {
-        // Newer models (GPT-5, O3, O4, GPT-4.1) use max_completion_tokens and don't support temperature
+        // Newer models use max_completion_tokens - temperature support varies
         requestBody.max_completion_tokens = 1000;
+        if (temperature !== undefined) {
+          requestBody.temperature = temperature;
+        }
       } else {
         // Legacy models use max_tokens and support temperature
         requestBody.max_tokens = 1000;
-        requestBody.temperature = 0.7;
+        requestBody.temperature = temperature !== undefined ? temperature : 0.7;
       }
 
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -86,6 +90,41 @@ export class OpenAIClient {
       if (!response.ok) {
         const errorText = await response.text();
         console.error('OpenAI API Error:', errorText);
+        
+        // If temperature parameter caused error, retry without it
+        if (errorText.includes('temperature') && temperature !== undefined) {
+          console.log('Retrying without temperature parameter for model:', model);
+          delete requestBody.temperature;
+          
+          const retryResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${this.apiKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(requestBody),
+          });
+          
+          if (!retryResponse.ok) {
+            const retryErrorText = await retryResponse.text();
+            console.error('Retry OpenAI API Error:', retryErrorText);
+            throw new Error(`OpenAI API error: ${retryResponse.status} - ${retryErrorText}`);
+          }
+          
+          const retryData = await retryResponse.json();
+          if (!retryData.choices || retryData.choices.length === 0) {
+            throw new Error('No response from OpenAI API');
+          }
+          
+          const generatedResponse = retryData.choices[0].message?.content || '';
+          const tokenCount = retryData.usage?.completion_tokens || 0;
+          
+          return {
+            response: generatedResponse,
+            tokenCount: tokenCount
+          };
+        }
+        
         throw new Error(`OpenAI API error: ${response.status} - ${errorText}`);
       }
 
