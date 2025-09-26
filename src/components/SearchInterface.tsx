@@ -64,7 +64,7 @@ const SearchInterface = () => {
     upstashUrl: '',
     upstashToken: '',
     openaiApiKey: '',
-    openaiModel: 'gpt-4o',
+    openaiModel: 'gpt-4.1-2025-04-14',
     searchIndex: 'CBM Products1'
   });
 
@@ -566,7 +566,7 @@ Please provide a comprehensive answer based on this information.`;
       console.log('Formatted user message preview:', formattedUserMessage.substring(0, 300) + '...');
 
       // Use max_completion_tokens for newer models, max_tokens for older ones
-      const isNewerModel = config.openaiModel === 'gpt-5-mini' || config.openaiModel === 'gpt-4.1-mini';
+      const isNewerModel = config.openaiModel.startsWith('gpt-5') || config.openaiModel.startsWith('gpt-4.1') || config.openaiModel.startsWith('o3') || config.openaiModel.startsWith('o4');
       const requestBody: any = {
         model: config.openaiModel,
         messages: [
@@ -821,8 +821,8 @@ Please provide a comprehensive answer based on this information.`;
                   onChange={(e) => setConfig(prev => ({ ...prev, openaiModel: e.target.value }))}
                   className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
                 >
-                  <option value="gpt-5-mini">gpt-5-mini</option>
-                  <option value="gpt-4.1-mini">gpt-4.1-mini</option>
+                  <option value="gpt-4.1-2025-04-14">gpt-4.1-2025-04-14</option>
+                  <option value="gpt-4.1-mini-2025-04-14">gpt-4.1-mini-2025-04-14</option>
                   <option value="gpt-4o">gpt-4o</option>
                   <option value="gpt-4o-mini">gpt-4o-mini</option>
                   <option value="gpt-3.5-turbo">gpt-3.5-turbo</option>
