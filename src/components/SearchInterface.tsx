@@ -15,6 +15,9 @@ import { parseMarkdownLinks } from '@/lib/utils';
 import logoImage from '@/assets/circuit-board-medics-logo.png';
 import { PromptLibrary, type SystemPrompt } from './PromptLibrary';
 import { ApiKeyManager } from './ApiKeyManager';
+import { ChatbotManager } from './ChatbotManager';
+import { ChatbotSelector } from './ChatbotSelector';
+import { ChatbotProfile, GlobalConfig } from '@/types/chatbot';
 
 interface SearchResult {
   id: string;
@@ -46,10 +49,12 @@ const SearchInterface = () => {
   const [isFirstMessage, setIsFirstMessage] = useState(true);
   const [showConfig, setShowConfig] = useState(false);
   const [showPromptLibrary, setShowPromptLibrary] = useState(false);
+  const [showChatbotManager, setShowChatbotManager] = useState(false);
   const [isLoadingConfig, setIsLoadingConfig] = useState(true);
   const [activeSources, setActiveSources] = useState<Source[]>([]);
   const [prompts, setPrompts] = useState<SystemPrompt[]>([]);
-  const [activePromptId, setActivePromptId] = useState<string>('');
+  const [chatbots, setChatbots] = useState<ChatbotProfile[]>([]);
+  const [activeChatbotId, setActiveChatbotId] = useState<string>('');
   const [promptsReady, setPromptsReady] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -60,20 +65,18 @@ const SearchInterface = () => {
     token: "ASI0AAImcDJhYTZmMzQ0ZmZjYzE0NmVhOTc3YjYxMDVmMmFiM2EyZnAyODc1Ng"
   };
   
-  // Configuration state
-  const [config, setConfig] = useState({
+  // Global configuration state (API keys only)
+  const [globalConfig, setGlobalConfig] = useState<GlobalConfig>({
     upstashUrl: '',
     upstashToken: '',
-    openaiApiKey: '',
-    openaiModel: 'gpt-4.1-2025-04-14',
-    searchIndex: 'CBM Products1',
-    temperature: 0.7
+    openaiApiKey: ''
   });
 
-  // Load configuration and prompts from Redis on component mount
+  // Load configuration, prompts, and chatbots from Redis on component mount
   useEffect(() => {
     loadConfigFromRedis();
     loadPrompts();
+    loadChatbots();
   }, []);
 
   // Auto-resize textarea
@@ -206,32 +209,98 @@ const SearchInterface = () => {
     }
   };
 
+  // Load chatbots from Redis
+  const loadChatbots = async () => {
+    try {
+      console.log('Loading chatbots from Redis...');
+      const storedChatbots = await redisGet('chatbot-profiles');
+      const chatbotsArray = Array.isArray(storedChatbots) ? storedChatbots : [];
+
+      console.log('Loaded chatbots:', chatbotsArray.length);
+      setChatbots(chatbotsArray);
+
+      if (chatbotsArray.length > 0) {
+        const activeId = await redisGet('active-chatbot-id');
+        const validChatbot = chatbotsArray.find(c => c.id === activeId);
+
+        if (validChatbot) {
+          setActiveChatbotId(activeId);
+          console.log('Using existing active chatbot:', activeId);
+        } else {
+          const firstChatbotId = chatbotsArray[0].id;
+          setActiveChatbotId(firstChatbotId);
+          await redisSet('active-chatbot-id', firstChatbotId);
+          console.log('Set first chatbot as active:', firstChatbotId);
+        }
+      } else {
+        console.log('No chatbots found, will show chatbot manager');
+        setActiveChatbotId('');
+      }
+    } catch (error) {
+      console.error('Failed to load chatbots:', error);
+      toast({
+        title: "Error Loading Chatbots",
+        description: "Failed to load chatbot configurations. Please refresh the page.",
+        variant: "destructive"
+      });
+    }
+  };
+
   // Callback for when prompts are updated in the PromptLibrary
   const handlePromptsUpdated = async () => {
     console.log('Refreshing prompts after library update...');
     await loadPrompts();
   };
 
-  // Enhanced prompt select handler
-  const handlePromptSelect = async (promptId: string) => {
-    console.log('Selecting prompt:', promptId);
+  // Callback for when chatbots are updated in the ChatbotManager
+  const handleChatbotsUpdated = async () => {
+    console.log('Refreshing chatbots after manager update...');
+    await loadChatbots();
+  };
+
+  // Get active chatbot
+  const getActiveChatbot = (): ChatbotProfile | null => {
+    return chatbots.find(c => c.id === activeChatbotId) || null;
+  };
+
+  // Get active prompt from active chatbot
+  const getActivePrompt = (): SystemPrompt | null => {
+    const activeChatbot = getActiveChatbot();
+    if (!activeChatbot) return null;
+    return prompts.find(p => p.id === activeChatbot.systemPromptId) || null;
+  };
+
+  // Handle chatbot selection
+  const handleChatbotSelect = async (chatbotId: string) => {
+    console.log('Selecting chatbot:', chatbotId);
     try {
-      await redisSet('active-prompt-id', promptId);
-      setActivePromptId(promptId);
-      console.log('Prompt selection saved to Redis');
-      
+      await redisSet('active-chatbot-id', chatbotId);
+      setActiveChatbotId(chatbotId);
+      console.log('Chatbot selection saved to Redis');
+
+      // Clear messages when switching chatbots
+      setMessages([]);
+      setActiveSources([]);
+
+      toast({
+        title: "Chatbot Switched",
+        description: `Now using: ${chatbots.find(c => c.id === chatbotId)?.name}`
+      });
     } catch (error) {
-      console.error('Failed to select prompt:', error);
+      console.error('Failed to select chatbot:', error);
       toast({
         title: "Error",
-        description: "Failed to save prompt selection",
+        description: "Failed to save chatbot selection",
         variant: "destructive"
       });
     }
   };
 
-  const getActivePrompt = (): SystemPrompt | null => {
-    return prompts.find(p => p.id === activePromptId) || null;
+  // Enhanced prompt select handler (legacy - now handled via chatbot config)
+  const handlePromptSelect = async (promptId: string) => {
+    console.log('Selecting prompt:', promptId);
+    // This is now a no-op as prompts are selected per-chatbot
+    // Kept for compatibility with PromptLibrary component
   };
 
   const migrateExistingPrompt = async (existingSystemPrompt: string) => {
@@ -263,22 +332,32 @@ const SearchInterface = () => {
   const loadConfigFromRedis = async () => {
     try {
       setIsLoadingConfig(true);
-      console.log('Loading configuration from Redis...');
-      
-      const raw = await redisGet('search-assistant-config');
-      console.log('Raw Redis response:', raw);
-      
+      console.log('Loading global configuration from Redis...');
+
+      // Try loading new global config first
+      let raw = await redisGet('global-config');
+
+      // If no global config exists, try migrating from old config
+      if (!raw) {
+        console.log('No global-config found, checking for old search-assistant-config...');
+        const oldConfig = await redisGet('search-assistant-config');
+
+        if (oldConfig) {
+          console.log('Migrating old configuration to new structure...');
+          await migrateOldConfig(oldConfig);
+          raw = await redisGet('global-config');
+        }
+      }
+
       if (raw) {
         let parsedConfig: any = raw;
-        let wasDoubleEncoded = false;
-        
-        // Parse JSON if needed (handles possible double-encoding)
+
+        // Parse JSON if needed
         if (typeof parsedConfig === 'string') {
           try {
             parsedConfig = JSON.parse(parsedConfig);
             if (typeof parsedConfig === 'string') {
               parsedConfig = JSON.parse(parsedConfig);
-              wasDoubleEncoded = true;
             }
           } catch (parseError) {
             console.error('Failed to parse config JSON:', parseError);
@@ -291,64 +370,27 @@ const SearchInterface = () => {
             return;
           }
         }
-        
-        if (!parsedConfig || typeof parsedConfig !== 'object') {
-          console.warn('Parsed config is not an object:', parsedConfig);
+
+        // Validate critical fields (API keys only)
+        const requiredFields = ['upstashUrl', 'upstashToken', 'openaiApiKey'];
+        const missingFields = requiredFields.filter((field) => !parsedConfig[field]);
+
+        if (missingFields.length > 0) {
+          console.warn('Missing global configuration fields:', missingFields);
           toast({
-            title: "Configuration Error",
-            description: "Saved configuration is corrupted. Please reconfigure.",
+            title: "Incomplete Configuration",
+            description: `Missing API keys: ${missingFields.join(', ')}. Please complete your setup.`,
             variant: "destructive"
           });
           setShowConfig(true);
           return;
         }
-        
-        // Handle migration from old config with systemPrompt
-        if (parsedConfig.systemPrompt && prompts.length === 0) {
-          console.log('Migrating existing system prompt to library...');
-          await migrateExistingPrompt(parsedConfig.systemPrompt);
-          
-          // Remove systemPrompt from config and save updated config
-          const { systemPrompt, ...configWithoutPrompt } = parsedConfig;
-          await redisSet('search-assistant-config', configWithoutPrompt);
-          parsedConfig = configWithoutPrompt;
-        }
-        
-        // Validate critical fields (excluding system prompt now)
-        const requiredFields = ['upstashUrl', 'upstashToken', 'openaiApiKey', 'searchIndex'];
-        const missingFields = requiredFields.filter((field) => !parsedConfig[field]);
-        
-        if (missingFields.length > 0) {
-          console.warn('Missing configuration fields:', missingFields);
-          toast({
-            title: "Incomplete Configuration",
-            description: `Missing: ${missingFields.join(', ')}. Please complete your setup.`,
-            variant: "destructive"
-          });
-          setShowConfig(true);
-          return; // Don't proceed with incomplete config
-        }
-        
-        // Use config directly from Redis - no fallbacks to defaults
-        setConfig(parsedConfig);
-        
-        console.log('Config updated from Redis:');
-        console.log('- All config fields present:', requiredFields.every(field => parsedConfig[field]));
-        
-        // If we detected double-encoding, normalize by re-saving once
-        if (wasDoubleEncoded) {
-          try {
-            await redisSet('search-assistant-config', parsedConfig);
-            console.log('Normalized double-encoded configuration in Redis');
-          } catch (e) {
-            console.warn('Failed to normalize saved config:', e);
-          }
-        }
-        
-        console.log('Successfully loaded and validated config:', parsedConfig);
-        
+
+        setGlobalConfig(parsedConfig);
+        console.log('Successfully loaded global config');
+
       } else {
-        console.log('No saved configuration found, using defaults');
+        console.log('No saved configuration found');
         setShowConfig(true);
         toast({
           title: "First Time Setup",
@@ -369,12 +411,88 @@ const SearchInterface = () => {
     }
   };
 
+  // Migrate old config structure to new chatbot-based structure
+  const migrateOldConfig = async (oldConfig: any) => {
+    try {
+      console.log('Starting migration from old config structure...');
+
+      // Parse if string
+      if (typeof oldConfig === 'string') {
+        oldConfig = JSON.parse(oldConfig);
+      }
+
+      // Extract global API keys
+      const newGlobalConfig: GlobalConfig = {
+        upstashUrl: oldConfig.upstashUrl || '',
+        upstashToken: oldConfig.upstashToken || '',
+        openaiApiKey: oldConfig.openaiApiKey || ''
+      };
+
+      await redisSet('global-config', newGlobalConfig);
+      console.log('Saved new global-config');
+
+      // Check if we already have chatbots
+      const existingChatbots = await redisGet('chatbot-profiles');
+      if (!existingChatbots || !Array.isArray(existingChatbots) || existingChatbots.length === 0) {
+        // Create default chatbot from old config
+        const existingPrompts = await redisGet('system-prompts');
+        const promptsArray = Array.isArray(existingPrompts) ? existingPrompts : [];
+
+        let systemPromptId = '';
+        if (promptsArray.length > 0) {
+          systemPromptId = promptsArray[0].id;
+        } else if (oldConfig.systemPrompt) {
+          // Migrate old system prompt
+          const migratedPrompt: SystemPrompt = {
+            id: 'prompt_migrated',
+            name: 'Migrated Prompt',
+            description: 'Automatically migrated from old configuration',
+            content: oldConfig.systemPrompt,
+            isDefault: true,
+            createdAt: new Date(),
+            updatedAt: new Date()
+          };
+          await redisSet('system-prompts', [migratedPrompt]);
+          systemPromptId = migratedPrompt.id;
+          console.log('Migrated system prompt');
+        }
+
+        const defaultChatbot: ChatbotProfile = {
+          id: 'chatbot_default',
+          name: 'Default Chatbot',
+          description: 'Migrated from previous configuration',
+          config: {
+            searchIndex: oldConfig.searchIndex || 'CBM Products1',
+            openaiModel: oldConfig.openaiModel || 'gpt-4.1-2025-04-14',
+            temperature: oldConfig.temperature || 0.7,
+            maxResults: 10
+          },
+          systemPromptId: systemPromptId,
+          availablePrompts: [systemPromptId],
+          isActive: true,
+          isPublic: true,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        };
+
+        await redisSet('chatbot-profiles', [defaultChatbot]);
+        await redisSet('active-chatbot-id', defaultChatbot.id);
+        console.log('Created default chatbot from old config');
+      }
+
+      console.log('Migration completed successfully');
+    } catch (error) {
+      console.error('Migration failed:', error);
+      throw error;
+    }
+  };
+
   const saveConfigToRedis = async () => {
     try {
-        // Validate configuration before saving (excluding system prompt)
-        const requiredFields = ['upstashUrl', 'upstashToken', 'openaiApiKey', 'searchIndex'];
-        const missingFields = requiredFields.filter(field => !config[field as keyof typeof config]);
-      
+      // Validate global configuration before saving
+      const requiredFields = ['upstashUrl', 'upstashToken', 'openaiApiKey'];
+      const missingFields = requiredFields.filter(field => !globalConfig[field as keyof GlobalConfig]);
+
       if (missingFields.length > 0) {
         toast({
           title: "Incomplete Configuration",
@@ -384,25 +502,30 @@ const SearchInterface = () => {
         return;
       }
 
-      // Check if we have at least one prompt
-      if (prompts.length === 0) {
+      // Check if we have at least one chatbot
+      if (chatbots.length === 0) {
         toast({
-          title: "No System Prompt",
-          description: "Please create at least one system prompt in the Prompt Library",
+          title: "No Chatbot Configured",
+          description: "Please create at least one chatbot in the Chatbot Manager",
           variant: "destructive"
         });
-        setShowPromptLibrary(true);
+        setShowChatbotManager(true);
         return;
       }
-      
-      // Store plain object; redisSet will JSON-encode once
-      await redisSet('search-assistant-config', config);
-      
-      console.log('Saved config to Redis:', config);
-      
+
+      // Store global config
+      await redisSet('global-config', globalConfig);
+
+      console.log('Saved global config to Redis:', globalConfig);
+
       // Close config panel after successful save
       setShowConfig(false);
-      
+
+      toast({
+        title: "Configuration Saved",
+        description: "Your settings have been saved successfully"
+      });
+
     } catch (error) {
       console.error('Failed to save config to Redis:', error);
       toast({
@@ -432,36 +555,43 @@ const SearchInterface = () => {
       return;
     }
 
-    if (!config.upstashUrl || !config.upstashToken || !config.openaiApiKey || !config.searchIndex) {
-      const activePrompt = getActivePrompt();
+    // Get active chatbot
+    const activeChatbot = getActiveChatbot();
+    if (!activeChatbot) {
+      toast({
+        title: "No Chatbot Selected",
+        description: "Please select or create a chatbot",
+        variant: "destructive"
+      });
+      setShowChatbotManager(true);
+      return;
+    }
+
+    // Validate global configuration
+    if (!globalConfig.upstashUrl || !globalConfig.upstashToken || !globalConfig.openaiApiKey) {
       const missing = [];
-      if (!config.upstashUrl) missing.push('Upstash URL');
-      if (!config.upstashToken) missing.push('Upstash Token'); 
-      if (!config.openaiApiKey) missing.push('OpenAI API Key');
-      if (!config.searchIndex) missing.push('Search Index');
-      if (!activePrompt) missing.push('System Prompt');
-      
+      if (!globalConfig.upstashUrl) missing.push('Upstash URL');
+      if (!globalConfig.upstashToken) missing.push('Upstash Token');
+      if (!globalConfig.openaiApiKey) missing.push('OpenAI API Key');
+
       toast({
         title: "Missing Configuration",
         description: `Please configure: ${missing.join(', ')}`,
         variant: "destructive"
       });
-      if (!activePrompt) {
-        setShowPromptLibrary(true);
-      } else {
-        setShowConfig(true);
-      }
+      setShowConfig(true);
       return;
     }
 
+    // Get active prompt from chatbot
     const activePrompt = getActivePrompt();
     if (!activePrompt) {
       toast({
         title: "No System Prompt",
-        description: "Please select a system prompt from the library",
+        description: `Chatbot "${activeChatbot.name}" has no system prompt configured`,
         variant: "destructive"
       });
-      setShowPromptLibrary(true);
+      setShowChatbotManager(true);
       return;
     }
 
@@ -473,14 +603,14 @@ const SearchInterface = () => {
       // Use the correct Upstash Search SDK pattern: client.index("name").search()
       try {
         const client = new UpstashSearch({
-          url: config.upstashUrl,
-          token: config.upstashToken,
+          url: globalConfig.upstashUrl,
+          token: globalConfig.upstashToken,
         });
 
-        const index = client.index(config.searchIndex);
+        const index = client.index(activeChatbot.config.searchIndex);
         const searchResponse = await index.search({
           query: query,
-          limit: 100, // Retrieve up to 100 results for better coverage
+          limit: activeChatbot.config.maxResults || 100,
         });
 
         const allResults = searchResponse || [];
@@ -510,7 +640,7 @@ const SearchInterface = () => {
         throw new Error(`Upstash Search failed: ${searchError instanceof Error ? searchError.message : 'Unknown error'}`);
       }
 
-      // Step 2: Generate OpenAI response with ALL search result data
+      // Step 2: Generate OpenAI response using chatbot's model and temperature
       const formattedResults = searchResults.map((result, index) => {
         // Include ALL fields from the search result
         const content = result.content || {};
@@ -568,9 +698,9 @@ Please provide a comprehensive answer based on this information.`;
       console.log('Formatted user message preview:', formattedUserMessage.substring(0, 300) + '...');
 
       // Use max_completion_tokens for newer models, max_tokens for older ones
-      const isNewerModel = config.openaiModel.startsWith('gpt-5') || config.openaiModel.startsWith('gpt-4.1') || config.openaiModel.startsWith('o3') || config.openaiModel.startsWith('o4');
+      const isNewerModel = activeChatbot.config.openaiModel.startsWith('gpt-5') || activeChatbot.config.openaiModel.startsWith('gpt-4.1') || activeChatbot.config.openaiModel.startsWith('o3') || activeChatbot.config.openaiModel.startsWith('o4');
       const requestBody: any = {
-        model: config.openaiModel,
+        model: activeChatbot.config.openaiModel,
         messages: [
           {
             role: 'system',
@@ -582,23 +712,23 @@ Please provide a comprehensive answer based on this information.`;
           }
         ]
       };
-      
+
       // Add the appropriate token limit parameter based on model
       if (isNewerModel) {
         requestBody.max_completion_tokens = 4000;
         // Try to add temperature, but handle gracefully if not supported
-        if (config.temperature !== undefined) {
-          requestBody.temperature = config.temperature;
+        if (activeChatbot.config.temperature !== undefined) {
+          requestBody.temperature = activeChatbot.config.temperature;
         }
       } else {
         requestBody.max_tokens = 4000;
-        requestBody.temperature = config.temperature;
+        requestBody.temperature = activeChatbot.config.temperature;
       }
 
       const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${config.openaiApiKey}`,
+          'Authorization': `Bearer ${globalConfig.openaiApiKey}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(requestBody)
@@ -748,6 +878,20 @@ Please provide a comprehensive answer based on this information.`;
         <div className="max-w-7xl mx-auto flex justify-between items-center">
           <img src={logoImage} alt="Circuit Board Medics" className="h-8" />
           <div className="flex items-center space-x-3">
+            <ChatbotSelector
+              chatbots={chatbots}
+              activeChatbotId={activeChatbotId}
+              onSelect={handleChatbotSelect}
+              isLoading={isLoadingConfig}
+            />
+            <Button
+              variant="ghost"
+              onClick={() => setShowChatbotManager(true)}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <Bot className="h-4 w-4 mr-2" />
+              Manage Chatbots
+            </Button>
             <Button
               variant="ghost"
               onClick={() => setShowPromptLibrary(true)}
@@ -780,15 +924,16 @@ Please provide a comprehensive answer based on this information.`;
       {showConfig && (
         <div className="bg-background/95 backdrop-blur-sm border-b border-border/40 px-6 py-6">
           <div className="max-w-7xl mx-auto">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <h3 className="text-lg font-semibold mb-4">Global Configuration (API Keys)</h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="space-y-2">
                 <label className="text-sm font-medium text-foreground">
                   Upstash Search URL
                 </label>
                 <input
                   type="text"
-                  value={config.upstashUrl}
-                  onChange={(e) => setConfig(prev => ({ ...prev, upstashUrl: e.target.value }))}
+                  value={globalConfig.upstashUrl}
+                  onChange={(e) => setGlobalConfig(prev => ({ ...prev, upstashUrl: e.target.value }))}
                   className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
                   placeholder="https://your-search-endpoint.upstash.io"
                 />
@@ -799,8 +944,8 @@ Please provide a comprehensive answer based on this information.`;
                 </label>
                 <input
                   type="password"
-                  value={config.upstashToken}
-                  onChange={(e) => setConfig(prev => ({ ...prev, upstashToken: e.target.value }))}
+                  value={globalConfig.upstashToken}
+                  onChange={(e) => setGlobalConfig(prev => ({ ...prev, upstashToken: e.target.value }))}
                   className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
                   placeholder="Your Upstash token"
                 />
@@ -811,118 +956,17 @@ Please provide a comprehensive answer based on this information.`;
                 </label>
                 <input
                   type="password"
-                  value={config.openaiApiKey}
-                  onChange={(e) => setConfig(prev => ({ ...prev, openaiApiKey: e.target.value }))}
+                  value={globalConfig.openaiApiKey}
+                  onChange={(e) => setGlobalConfig(prev => ({ ...prev, openaiApiKey: e.target.value }))}
                   className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
                   placeholder="sk-..."
                 />
               </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground">
-                  OpenAI Model
-                </label>
-                <select
-                  value={config.openaiModel}
-                  onChange={(e) => setConfig(prev => ({ ...prev, openaiModel: e.target.value }))}
-                  className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
-                >
-                  <option value="gpt-4.1-2025-04-14">gpt-4.1-2025-04-14</option>
-                  <option value="gpt-4.1-mini-2025-04-14">gpt-4.1-mini-2025-04-14</option>
-                  <option value="gpt-4o">gpt-4o</option>
-                  <option value="gpt-4o-mini">gpt-4o-mini</option>
-                  <option value="gpt-3.5-turbo">gpt-3.5-turbo</option>
-                </select>
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground">
-                  Temperature
-                </label>
-                <div className="space-y-2">
-                  <input
-                    type="range"
-                    min="0"
-                    max="2"
-                    step="0.1"
-                    value={config.temperature}
-                    onChange={(e) => setConfig(prev => ({ ...prev, temperature: parseFloat(e.target.value) }))}
-                    className="w-full"
-                  />
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs text-muted-foreground">Creative: {config.temperature}</span>
-                    <input
-                      type="number"
-                      min="0"
-                      max="2"
-                      step="0.1"
-                      value={config.temperature}
-                      onChange={(e) => setConfig(prev => ({ ...prev, temperature: parseFloat(e.target.value) || 0.7 }))}
-                      className="w-16 px-2 py-1 text-xs bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-primary/20"
-                    />
-                  </div>
-                  {(config.openaiModel.startsWith('gpt-4.1') || config.openaiModel.startsWith('gpt-5') || config.openaiModel.startsWith('o3') || config.openaiModel.startsWith('o4')) && (
-                    <p className="text-xs text-amber-600 dark:text-amber-400">
-                      ⚠️ {config.openaiModel} may use fixed temperature. Will attempt to apply setting.
-                    </p>
-                  )}
-                </div>
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground">
-                  Search Index
-                </label>
-                <input
-                  type="text"
-                  value={config.searchIndex}
-                  onChange={(e) => setConfig(prev => ({ ...prev, searchIndex: e.target.value }))}
-                  className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
-                  placeholder="my-search-index"
-                />
-              </div>
             </div>
-            <div className="mt-6 space-y-2">
-              <label className="text-sm font-medium text-foreground">
-                Active System Prompt
-              </label>
-              <Select 
-                value={activePromptId} 
-                onValueChange={handlePromptSelect}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select a system prompt" />
-                </SelectTrigger>
-                <SelectContent>
-                  {prompts.map((prompt) => (
-                    <SelectItem key={prompt.id} value={prompt.id}>
-                      <div className="flex flex-col">
-                        <span className="font-medium">{prompt.name}</span>
-                        {prompt.description && (
-                          <span className="text-xs text-muted-foreground">{prompt.description}</span>
-                        )}
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {prompts.length === 0 && (
-                <p className="text-sm text-muted-foreground">
-                  No system prompts available. 
-                  <Button 
-                    variant="link" 
-                    className="h-auto p-0 ml-1" 
-                    onClick={() => setShowPromptLibrary(true)}
-                  >
-                    Create one in the Prompt Library
-                  </Button>
-                </p>
-              )}
-              {activePromptId && getActivePrompt() && (
-                <div className="mt-3 p-3 bg-muted/50 rounded-lg">
-                  <p className="text-xs text-muted-foreground mb-1">Preview:</p>
-                  <p className="text-xs font-mono text-foreground line-clamp-3">
-                    {getActivePrompt()?.content.substring(0, 150)}...
-                  </p>
-                </div>
-              )}
+            <div className="mt-6 p-4 bg-muted/30 rounded-lg">
+              <p className="text-sm text-muted-foreground">
+                <strong>Note:</strong> Chatbot-specific settings (model, temperature, search index) are now configured per-chatbot in the Chatbot Manager.
+              </p>
             </div>
             
             {/* API Key Management Section */}
@@ -945,9 +989,20 @@ Please provide a comprehensive answer based on this information.`;
         onClose={() => setShowPromptLibrary(false)}
         redisGet={redisGet}
         redisSet={redisSet}
-        activePromptId={activePromptId}
+        activePromptId={getActiveChatbot()?.systemPromptId || ''}
         onPromptSelect={handlePromptSelect}
         onPromptsUpdated={handlePromptsUpdated}
+      />
+
+      {/* Chatbot Manager Modal */}
+      <ChatbotManager
+        isOpen={showChatbotManager}
+        onClose={() => setShowChatbotManager(false)}
+        redisGet={redisGet}
+        redisSet={redisSet}
+        activeChatbotId={activeChatbotId}
+        onChatbotSelect={handleChatbotSelect}
+        onChatbotsUpdated={handleChatbotsUpdated}
       />
 
       {/* Main Chat Container */}
