@@ -55,6 +55,7 @@ const SearchInterface = () => {
   const [prompts, setPrompts] = useState<SystemPrompt[]>([]);
   const [chatbots, setChatbots] = useState<ChatbotProfile[]>([]);
   const [activeChatbotId, setActiveChatbotId] = useState<string>('');
+  const [activePromptId, setActivePromptId] = useState<string>('');
   const [promptsReady, setPromptsReady] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -248,8 +249,18 @@ const SearchInterface = () => {
 
   // Callback for when prompts are updated in the PromptLibrary
   const handlePromptsUpdated = async () => {
-    console.log('Refreshing prompts after library update...');
-    await loadPrompts();
+    try {
+      console.log('Refreshing prompts after library update...');
+      await loadPrompts();
+      await loadChatbots(); // Refresh chatbots to ensure prompt references are valid
+    } catch (error) {
+      console.error('Failed to refresh prompts:', error);
+      toast({
+        title: "Error",
+        description: "Failed to refresh prompts. Please try again.",
+        variant: "destructive"
+      });
+    }
   };
 
   // Callback for when chatbots are updated in the ChatbotManager
@@ -276,6 +287,13 @@ const SearchInterface = () => {
     try {
       await redisSet('active-chatbot-id', chatbotId);
       setActiveChatbotId(chatbotId);
+      
+      // Update activePromptId to match the selected chatbot's prompt
+      const selectedChatbot = chatbots.find(c => c.id === chatbotId);
+      if (selectedChatbot) {
+        setActivePromptId(selectedChatbot.systemPromptId);
+      }
+      
       console.log('Chatbot selection saved to Redis');
 
       // Clear messages when switching chatbots
@@ -296,11 +314,49 @@ const SearchInterface = () => {
     }
   };
 
-  // Enhanced prompt select handler (legacy - now handled via chatbot config)
+  // Handle prompt selection - updates the active chatbot's prompt
   const handlePromptSelect = async (promptId: string) => {
     console.log('Selecting prompt:', promptId);
-    // This is now a no-op as prompts are selected per-chatbot
-    // Kept for compatibility with PromptLibrary component
+    try {
+      const activeChatbot = getActiveChatbot();
+      if (!activeChatbot) {
+        toast({
+          title: "No Active Chatbot",
+          description: "Please select a chatbot first",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      // Update the chatbot's systemPromptId
+      const updatedChatbot = {
+        ...activeChatbot,
+        systemPromptId: promptId,
+        updatedAt: new Date()
+      };
+
+      // Update in chatbots array
+      const updatedChatbots = chatbots.map(c => 
+        c.id === activeChatbot.id ? updatedChatbot : c
+      );
+
+      // Save to Redis and update state
+      await redisSet('chatbot-profiles', updatedChatbots);
+      setChatbots(updatedChatbots);
+      setActivePromptId(promptId);
+
+      toast({
+        title: "Prompt Updated",
+        description: `${activeChatbot.name} is now using the selected prompt`
+      });
+    } catch (error) {
+      console.error('Failed to select prompt:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update prompt selection",
+        variant: "destructive"
+      });
+    }
   };
 
   const migrateExistingPrompt = async (existingSystemPrompt: string) => {
