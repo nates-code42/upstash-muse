@@ -623,10 +623,41 @@ const SearchInterface = () => {
     try {
       const formattedResults = searchResults.map((result, index) => {
         const content = result.content || {};
-        const contentFields = Object.entries(content)
-          .map(([key, value]) => `${key}: ${value}`)
-          .join('\n');
-        return `Result ${index + 1} (Score: ${result.score?.toFixed(2) || 'N/A'}):\n${contentFields}`;
+        const metadata = result.metadata || {};
+
+        // Detect if this is CBM Wiki structure (has content_chunk_* fields)
+        const hasContentChunks =
+          Object.keys(content).some(k => k.startsWith('content_chunk_')) ||
+          Object.keys(metadata).some(k => k.startsWith('content_chunk_'));
+
+        if (hasContentChunks) {
+          // CBM Wiki structure: Assemble all chunks for evaluation
+          const chunks: string[] = [];
+          const title = content.title || '';
+
+          // Collect chunks from content object
+          Object.entries(content).forEach(([key, value]) => {
+            if (key.startsWith('content_chunk_') && value && typeof value === 'string' && value.trim()) {
+              chunks.push(value);
+            }
+          });
+
+          // Collect chunks from metadata object
+          Object.entries(metadata).forEach(([key, value]) => {
+            if (key.startsWith('content_chunk_') && value && typeof value === 'string' && value.trim()) {
+              chunks.push(value);
+            }
+          });
+
+          const contentText = title ? `Title: ${title}\nContent: ${chunks.join(' ')}` : `Content: ${chunks.join(' ')}`;
+          return `Result ${index + 1} (Score: ${result.score?.toFixed(2) || 'N/A'}):\n${contentText}`;
+        } else {
+          // CBM Products1 structure: Use existing logic
+          const contentFields = Object.entries(content)
+            .map(([key, value]) => `${key}: ${value}`)
+            .join('\n');
+          return `Result ${index + 1} (Score: ${result.score?.toFixed(2) || 'N/A'}):\n${contentFields}`;
+        }
       }).join('\n\n');
 
       const evaluationMessage = `Query: "${query}"
@@ -882,34 +913,86 @@ Based on these results, can you answer the user's query sufficiently?`;
         // Include ALL fields from the search result
         const content = result.content || {};
         const metadata = result.metadata || {};
-        
-        // Format all content fields, ensuring URLs are full
-        const contentFields = Object.entries(content)
-          .map(([key, value]) => {
-            // If this looks like a URL field, ensure it's a full URL
-            if (typeof value === 'string' && (key.toLowerCase().includes('url') || value.startsWith('/'))) {
-              const fullUrl = value.startsWith('/') ? `https://circuitboardmedics.com${value}` : value;
-              return `${key}: ${fullUrl}`;
+
+        // Detect if this is CBM Wiki structure (has content_chunk_* fields)
+        const hasContentChunks =
+          Object.keys(content).some(k => k.startsWith('content_chunk_')) ||
+          Object.keys(metadata).some(k => k.startsWith('content_chunk_'));
+
+        let formattedContent = '';
+        let formattedMetadata = '';
+
+        if (hasContentChunks) {
+          // CBM Wiki structure: Assemble all chunks into unified content
+          const chunks: string[] = [];
+          const actualMetadata: Record<string, any> = {};
+          const title = content.title || '';
+
+          // Collect chunks from content object
+          Object.entries(content).forEach(([key, value]) => {
+            if (key.startsWith('content_chunk_') && value && typeof value === 'string' && value.trim()) {
+              chunks.push(value);
             }
-            return `${key}: ${value}`;
-          })
-          .join('\n');
-        
-        // Format all metadata fields, ensuring URLs are full
-        const metadataFields = Object.keys(metadata).length > 0 
-          ? '\nMetadata:\n' + Object.entries(metadata)
+          });
+
+          // Collect chunks from metadata object (CBM Wiki stores chunks 2-5 here)
+          Object.entries(metadata).forEach(([key, value]) => {
+            if (key.startsWith('content_chunk_') && value && typeof value === 'string' && value.trim()) {
+              chunks.push(value);
+            } else {
+              // Keep actual metadata separate
+              actualMetadata[key] = value;
+            }
+          });
+
+          // Format as unified content
+          if (title) {
+            formattedContent = `Title: ${title}\n\nContent:\n${chunks.join('\n\n')}`;
+          } else {
+            formattedContent = `Content:\n${chunks.join('\n\n')}`;
+          }
+
+          // Format actual metadata
+          if (Object.keys(actualMetadata).length > 0) {
+            formattedMetadata = '\n\nMetadata:\n' + Object.entries(actualMetadata)
               .map(([key, value]) => {
-                // If this looks like a URL field, ensure it's a full URL
-                if (typeof value === 'string' && (key.toLowerCase().includes('url') || value.startsWith('/'))) {
+                if (typeof value === 'string' && (key.toLowerCase().includes('url') || key === 'link' || value.startsWith('/'))) {
                   const fullUrl = value.startsWith('/') ? `https://circuitboardmedics.com${value}` : value;
                   return `${key}: ${fullUrl}`;
                 }
                 return `${key}: ${value}`;
               })
-              .join('\n')
-          : '';
-        
-        return `Result ${index + 1} (ID: ${result.id}, Score: ${result.score?.toFixed(2) || 'N/A'}):\n${contentFields}${metadataFields}`;
+              .join('\n');
+          }
+        } else {
+          // CBM Products1 structure: Use existing logic
+          const contentFields = Object.entries(content)
+            .map(([key, value]) => {
+              if (typeof value === 'string' && (key.toLowerCase().includes('url') || value.startsWith('/'))) {
+                const fullUrl = value.startsWith('/') ? `https://circuitboardmedics.com${value}` : value;
+                return `${key}: ${fullUrl}`;
+              }
+              return `${key}: ${value}`;
+            })
+            .join('\n');
+
+          const metadataFields = Object.keys(metadata).length > 0
+            ? '\n\nMetadata:\n' + Object.entries(metadata)
+                .map(([key, value]) => {
+                  if (typeof value === 'string' && (key.toLowerCase().includes('url') || value.startsWith('/'))) {
+                    const fullUrl = value.startsWith('/') ? `https://circuitboardmedics.com${value}` : value;
+                    return `${key}: ${fullUrl}`;
+                  }
+                  return `${key}: ${value}`;
+                })
+                .join('\n')
+            : '';
+
+          formattedContent = contentFields;
+          formattedMetadata = metadataFields;
+        }
+
+        return `Result ${index + 1} (ID: ${result.id}, Score: ${result.score?.toFixed(2) || 'N/A'}):\n${formattedContent}${formattedMetadata}`;
       }).join('\n\n');
 
       const contextText = formattedResults;
@@ -1081,19 +1164,29 @@ Please provide a comprehensive answer based on this information.`;
       const metadata = result.metadata || {};
       const content = result.content || {};
       
-      // Extract title from content (Name field or first available field)
-      const title = content.Name || content.Title || content.Product || `Source ${index + 1}`;
+      // Extract title from content (supports both CBM Products1 and CBM Wiki)
+      const title = content.title || content.Name || content.Title || content.Product || `Source ${index + 1}`;
+
+      // Extract description - prefer first content chunk for CBM Wiki
+      let description = content.Description || '';
+      if (!description && content.content_chunk_1) {
+        // CBM Wiki - use first chunk
+        description = content.content_chunk_1;
+      } else if (!description) {
+        // Fallback to any substantial string
+        description = Object.values(content).find(val => typeof val === 'string' && val.length > 20) as string || 'No description available';
+      }
       
-      // Extract description from content (Description field or truncated content)
-      const description = content.Description || 
-                         Object.values(content).find(val => typeof val === 'string' && val.length > 20) || 
-                         'No description available';
-      
-      // Extract and construct URL
+      // Extract and construct URL (supports both CBM Products1 and CBM Wiki)
       let url = '';
-      if (metadata['Product URL']) {
+      if (metadata.link) {
+        // CBM Wiki structure - full URL in metadata.link
+        url = metadata.link;
+      } else if (metadata['Product URL']) {
+        // CBM Products1 structure - relative URL in metadata['Product URL']
         url = `https://circuitboardmedics.com${metadata['Product URL']}`;
       } else if (content.URL || content.url) {
+        // Fallback for other structures
         url = content.URL || content.url;
         // Add domain if it's a relative URL
         if (url.startsWith('/')) {
