@@ -1,6 +1,8 @@
 export interface ChatbotConfig {
   searchIndex: string;
   secondarySearchIndex?: string;
+  evaluationPromptId?: string;
+  multiSourcePromptId?: string;
   openaiModel: string;
   temperature: number;
   maxResults: number;

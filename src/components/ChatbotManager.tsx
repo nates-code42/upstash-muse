@@ -52,6 +52,8 @@ export const ChatbotManager: React.FC<ChatbotManagerProps> = ({
     description: '',
     searchIndex: 'CBM Products1',
     secondarySearchIndex: '',
+    evaluationPromptId: '',
+    multiSourcePromptId: '',
     openaiModel: 'gpt-4.1-2025-04-14',
     temperature: 0.7,
     maxResults: 10,
@@ -139,6 +141,8 @@ export const ChatbotManager: React.FC<ChatbotManagerProps> = ({
       config: {
         searchIndex: formData.searchIndex,
         secondarySearchIndex: formData.secondarySearchIndex || undefined,
+        evaluationPromptId: formData.evaluationPromptId || undefined,
+        multiSourcePromptId: formData.multiSourcePromptId || undefined,
         openaiModel: formData.openaiModel,
         temperature: formData.temperature,
         maxResults: formData.maxResults
@@ -195,6 +199,8 @@ export const ChatbotManager: React.FC<ChatbotManagerProps> = ({
       config: {
         searchIndex: formData.searchIndex,
         secondarySearchIndex: formData.secondarySearchIndex || undefined,
+        evaluationPromptId: formData.evaluationPromptId || undefined,
+        multiSourcePromptId: formData.multiSourcePromptId || undefined,
         openaiModel: formData.openaiModel,
         temperature: formData.temperature,
         maxResults: formData.maxResults
@@ -294,6 +300,8 @@ export const ChatbotManager: React.FC<ChatbotManagerProps> = ({
       description: chatbot.description,
       searchIndex: chatbot.config.searchIndex,
       secondarySearchIndex: chatbot.config.secondarySearchIndex || '',
+      evaluationPromptId: chatbot.config.evaluationPromptId || '',
+      multiSourcePromptId: chatbot.config.multiSourcePromptId || '',
       openaiModel: chatbot.config.openaiModel,
       temperature: chatbot.config.temperature,
       maxResults: chatbot.config.maxResults,
@@ -322,6 +330,8 @@ export const ChatbotManager: React.FC<ChatbotManagerProps> = ({
       description: '',
       searchIndex: 'CBM Products1',
       secondarySearchIndex: '',
+      evaluationPromptId: '',
+      multiSourcePromptId: '',
       openaiModel: 'gpt-4.1-2025-04-14',
       temperature: 0.7,
       maxResults: 10,
@@ -532,9 +542,59 @@ export const ChatbotManager: React.FC<ChatbotManagerProps> = ({
                           className="mt-1"
                         />
                         <p className="text-xs text-muted-foreground mt-1">
-                          If configured, this index can be used as a fallback source (feature coming soon)
+                          If configured, AI will evaluate primary results and optionally search this index for additional context
                         </p>
                       </div>
+
+                      {formData.secondarySearchIndex && (
+                        <>
+                          <div>
+                            <Label>Evaluation Prompt (Optional)</Label>
+                            <Select
+                              value={formData.evaluationPromptId}
+                              onValueChange={(value) => setFormData(prev => ({ ...prev, evaluationPromptId: value }))}
+                            >
+                              <SelectTrigger className="mt-1">
+                                <SelectValue placeholder="Use default evaluation prompt" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="">Default Evaluation Prompt</SelectItem>
+                                {prompts.map((prompt) => (
+                                  <SelectItem key={prompt.id} value={prompt.id}>
+                                    {prompt.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Used by AI to determine if primary search results are sufficient to answer the query
+                            </p>
+                          </div>
+
+                          <div>
+                            <Label>Multi-Source Response Prompt (Optional)</Label>
+                            <Select
+                              value={formData.multiSourcePromptId}
+                              onValueChange={(value) => setFormData(prev => ({ ...prev, multiSourcePromptId: value }))}
+                            >
+                              <SelectTrigger className="mt-1">
+                                <SelectValue placeholder="Use standard system prompt" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="">Standard System Prompt</SelectItem>
+                                {prompts.map((prompt) => (
+                                  <SelectItem key={prompt.id} value={prompt.id}>
+                                    {prompt.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Used when combining results from both primary and secondary indexes
+                            </p>
+                          </div>
+                        </>
+                      )}
 
                       <div>
                         <Label>OpenAI Model</Label>

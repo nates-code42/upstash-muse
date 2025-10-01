@@ -42,6 +42,28 @@ interface Source {
   metadata?: any;
 }
 
+// Default prompts for two-stage search
+const DEFAULT_EVALUATION_PROMPT = `You are a search result evaluator. Your job is to determine if the provided search results contain sufficient information to answer the user's query.
+
+Analyze the search results and respond with a JSON object in this exact format:
+{
+  "sufficient": true/false,
+  "reasoning": "brief explanation"
+}
+
+Guidelines:
+- Return sufficient: true if the results directly address the query
+- Return sufficient: false if results are tangentially related, incomplete, or missing key information
+- Be conservative: when in doubt, return false to fetch more context
+- Keep reasoning brief (1-2 sentences)`;
+
+const DEFAULT_MULTI_SOURCE_PROMPT = `You are a helpful assistant that provides accurate information based on search results from multiple sources. When answering:
+- Synthesize information from all provided sources
+- Prioritize the most relevant and accurate information
+- If sources conflict, acknowledge the discrepancy
+- Cite specific details from the search results
+- Be comprehensive but concise`;
+
 const SearchInterface = () => {
   const [query, setQuery] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
@@ -592,6 +614,114 @@ const SearchInterface = () => {
     }
   };
 
+  // Helper function: Evaluate if search results are sufficient
+  const evaluateSearchResults = async (
+    query: string,
+    searchResults: SearchResult[],
+    evaluationPrompt: string
+  ): Promise<{ sufficient: boolean; reasoning: string }> => {
+    try {
+      const formattedResults = searchResults.map((result, index) => {
+        const content = result.content || {};
+        const contentFields = Object.entries(content)
+          .map(([key, value]) => `${key}: ${value}`)
+          .join('\n');
+        return `Result ${index + 1} (Score: ${result.score?.toFixed(2) || 'N/A'}):\n${contentFields}`;
+      }).join('\n\n');
+
+      const evaluationMessage = `Query: "${query}"
+
+Search Results:
+${formattedResults}
+
+Based on these results, can you answer the user's query sufficiently?`;
+
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${globalConfig.openaiApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          messages: [
+            { role: 'system', content: evaluationPrompt },
+            { role: 'user', content: evaluationMessage }
+          ],
+          max_tokens: 200,
+          temperature: 0.3
+        })
+      });
+
+      if (!response.ok) {
+        console.error('Evaluation API call failed:', response.status);
+        // Fail-safe: assume insufficient on error
+        return { sufficient: false, reasoning: 'Evaluation failed, searching secondary index as precaution' };
+      }
+
+      const data = await response.json();
+      const content = data.choices[0]?.message?.content;
+
+      if (!content) {
+        return { sufficient: false, reasoning: 'No evaluation response received' };
+      }
+
+      // Parse JSON response
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const evaluation = JSON.parse(jsonMatch[0]);
+        console.log('AI Evaluation:', evaluation);
+        return {
+          sufficient: evaluation.sufficient === true,
+          reasoning: evaluation.reasoning || 'No reasoning provided'
+        };
+      }
+
+      // Fallback: if can't parse JSON, assume insufficient
+      return { sufficient: false, reasoning: 'Could not parse evaluation response' };
+    } catch (error) {
+      console.error('Error evaluating search results:', error);
+      // Fail-safe: assume insufficient on error
+      return { sufficient: false, reasoning: 'Evaluation error, checking secondary source' };
+    }
+  };
+
+  // Helper function: Deduplicate search results by ID
+  const deduplicateResults = (
+    primaryResults: SearchResult[],
+    secondaryResults: SearchResult[]
+  ): SearchResult[] => {
+    const seenIds = new Set(primaryResults.map(r => r.id));
+    const uniqueSecondary = secondaryResults.filter(r => !seenIds.has(r.id));
+    const merged = [...primaryResults, ...uniqueSecondary];
+
+    // Sort by relevance score (descending)
+    merged.sort((a, b) => (b.score || 0) - (a.score || 0));
+
+    console.log(`Deduplicated results: ${primaryResults.length} primary + ${uniqueSecondary.length} unique secondary = ${merged.length} total`);
+    return merged;
+  };
+
+  // Helper function: Select appropriate prompt for response generation
+  const selectPromptForResponse = (
+    usedSecondarySearch: boolean,
+    multiSourcePromptId?: string
+  ): SystemPrompt | null => {
+    // If we used secondary search and have a multi-source prompt configured, use it
+    if (usedSecondarySearch && multiSourcePromptId) {
+      const multiSourcePrompt = prompts.find(p => p.id === multiSourcePromptId);
+      if (multiSourcePrompt) {
+        console.log('Using multi-source response prompt:', multiSourcePrompt.name);
+        return multiSourcePrompt;
+      }
+    }
+
+    // Otherwise, use the standard system prompt
+    const standardPrompt = getActivePrompt();
+    console.log('Using standard system prompt');
+    return standardPrompt;
+  };
+
   const handleSearch = async () => {
     if (!query.trim()) {
       toast({
@@ -690,13 +820,64 @@ const SearchInterface = () => {
           console.log('Top 10 score range:', { min: Math.min(...topScores), max: Math.max(...topScores) });
         }
         console.log('Results filtered out:', allResults.length - searchResults.length);
-        
+
       } catch (searchError) {
         console.error('Upstash Search error:', searchError);
         throw new Error(`Upstash Search failed: ${searchError instanceof Error ? searchError.message : 'Unknown error'}`);
       }
 
-      // Step 2: Generate OpenAI response using chatbot's model and temperature
+      // Two-stage search: Evaluate and optionally search secondary index
+      let usedSecondarySearch = false;
+
+      if (activeChatbot.config.secondarySearchIndex) {
+        console.log('=== Two-Stage Search Activated ===');
+
+        // Stage 2: AI Evaluation
+        const evaluationPromptContent = activeChatbot.config.evaluationPromptId
+          ? prompts.find(p => p.id === activeChatbot.config.evaluationPromptId)?.content || DEFAULT_EVALUATION_PROMPT
+          : DEFAULT_EVALUATION_PROMPT;
+
+        console.log('Evaluating primary search results with AI...');
+        const evaluation = await evaluateSearchResults(query, searchResults, evaluationPromptContent);
+        console.log('Evaluation result:', evaluation);
+
+        // Stage 3: Conditional Secondary Search
+        if (!evaluation.sufficient) {
+          console.log('Primary results insufficient, searching secondary index:', activeChatbot.config.secondarySearchIndex);
+
+          try {
+            const client = new UpstashSearch({
+              url: globalConfig.upstashUrl,
+              token: globalConfig.upstashToken,
+            });
+
+            const secondaryIndex = client.index(activeChatbot.config.secondarySearchIndex);
+            const secondaryResponse = await secondaryIndex.search({
+              query: query,
+              limit: 10,
+            });
+
+            const secondaryResults = (secondaryResponse || [])
+              .sort((a, b) => (b.score || 0) - (a.score || 0))
+              .slice(0, 10);
+
+            console.log('Secondary search returned:', secondaryResults.length, 'results');
+
+            if (secondaryResults.length > 0) {
+              // Merge and deduplicate
+              searchResults = deduplicateResults(searchResults, secondaryResults);
+              usedSecondarySearch = true;
+            }
+          } catch (secondaryError) {
+            console.error('Secondary search failed, continuing with primary results:', secondaryError);
+            // Continue with primary results only
+          }
+        } else {
+          console.log('Primary results sufficient, skipping secondary search');
+        }
+      }
+
+      // Step 2: Generate OpenAI response using appropriate prompt
       const formattedResults = searchResults.map((result, index) => {
         // Include ALL fields from the search result
         const content = result.content || {};
@@ -745,12 +926,23 @@ Please provide a comprehensive answer based on this information.`;
 
       const formattedUserMessage = formatUserMessage(query, contextText);
 
+      // Stage 4: Select appropriate prompt for final response
+      const responsePrompt = selectPromptForResponse(
+        usedSecondarySearch,
+        activeChatbot.config.multiSourcePromptId
+      );
+
+      if (!responsePrompt) {
+        throw new Error('No response prompt available');
+      }
+
       // Debug: Log the system prompt and formatted message being used
       console.log('=== OpenAI Request Debug ===');
+      console.log('Used secondary search:', usedSecondarySearch);
       console.log('System prompt being sent to OpenAI:');
-      console.log('Length:', activePrompt.content.length);
-      console.log('First 200 chars:', activePrompt.content.substring(0, 200));
-      console.log('Is Circuit Board Medics prompt?:', activePrompt.content.includes('Circuit Board Medics'));
+      console.log('Prompt name:', responsePrompt.name);
+      console.log('Length:', responsePrompt.content.length);
+      console.log('First 200 chars:', responsePrompt.content.substring(0, 200));
       console.log('Formatted user message preview:', formattedUserMessage.substring(0, 300) + '...');
 
       // Use max_completion_tokens for newer models, max_tokens for older ones
@@ -760,7 +952,7 @@ Please provide a comprehensive answer based on this information.`;
         messages: [
           {
             role: 'system',
-            content: activePrompt.content
+            content: responsePrompt.content
           },
           {
             role: 'user',
