@@ -21,6 +21,7 @@ import {
 import { toast } from '@/hooks/use-toast';
 import { ChatbotProfile } from '@/types/chatbot';
 import { SystemPrompt } from './PromptLibrary';
+import { ErrorBoundary } from './ErrorBoundary';
 
 interface ChatbotManagerProps {
   isOpen: boolean;
@@ -361,6 +362,8 @@ export const ChatbotManager: React.FC<ChatbotManagerProps> = ({
           <DialogDescription className="sr-only">Manage multiple chatbot configurations</DialogDescription>
         </DialogHeader>
 
+        <ErrorBoundary>
+
         <div className="flex-1 min-h-0 overflow-y-auto">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-full min-h-0">
             {/* Chatbots List */}
@@ -548,17 +551,20 @@ export const ChatbotManager: React.FC<ChatbotManagerProps> = ({
 
                       {formData.secondarySearchIndex && (
                         <>
-                          <div>
+                           <div>
                             <Label>Evaluation Prompt (Optional)</Label>
                             <Select
-                              value={formData.evaluationPromptId}
-                              onValueChange={(value) => setFormData(prev => ({ ...prev, evaluationPromptId: value }))}
+                              value={formData.evaluationPromptId || 'default-evaluation'}
+                              onValueChange={(value) => setFormData(prev => ({ 
+                                ...prev, 
+                                evaluationPromptId: value === 'default-evaluation' ? '' : value 
+                              }))}
                             >
                               <SelectTrigger className="mt-1">
                                 <SelectValue placeholder="Use default evaluation prompt" />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="">Default Evaluation Prompt</SelectItem>
+                                <SelectItem value="default-evaluation">Default Evaluation Prompt</SelectItem>
                                 {prompts.map((prompt) => (
                                   <SelectItem key={prompt.id} value={prompt.id}>
                                     {prompt.name}
@@ -574,14 +580,17 @@ export const ChatbotManager: React.FC<ChatbotManagerProps> = ({
                           <div>
                             <Label>Multi-Source Response Prompt (Optional)</Label>
                             <Select
-                              value={formData.multiSourcePromptId}
-                              onValueChange={(value) => setFormData(prev => ({ ...prev, multiSourcePromptId: value }))}
+                              value={formData.multiSourcePromptId || 'default-multi-source'}
+                              onValueChange={(value) => setFormData(prev => ({ 
+                                ...prev, 
+                                multiSourcePromptId: value === 'default-multi-source' ? '' : value 
+                              }))}
                             >
                               <SelectTrigger className="mt-1">
                                 <SelectValue placeholder="Use standard system prompt" />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="">Standard System Prompt</SelectItem>
+                                <SelectItem value="default-multi-source">Standard System Prompt</SelectItem>
                                 {prompts.map((prompt) => (
                                   <SelectItem key={prompt.id} value={prompt.id}>
                                     {prompt.name}
@@ -678,6 +687,7 @@ export const ChatbotManager: React.FC<ChatbotManagerProps> = ({
             </div>
           </div>
         </div>
+        </ErrorBoundary>
       </DialogContent>
     </Dialog>
   );
