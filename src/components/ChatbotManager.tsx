@@ -51,6 +51,7 @@ export const ChatbotManager: React.FC<ChatbotManagerProps> = ({
     name: '',
     description: '',
     searchIndex: 'CBM Products1',
+    secondarySearchIndex: '',
     openaiModel: 'gpt-4.1-2025-04-14',
     temperature: 0.7,
     maxResults: 10,
@@ -137,6 +138,7 @@ export const ChatbotManager: React.FC<ChatbotManagerProps> = ({
       description: formData.description.trim(),
       config: {
         searchIndex: formData.searchIndex,
+        secondarySearchIndex: formData.secondarySearchIndex || undefined,
         openaiModel: formData.openaiModel,
         temperature: formData.temperature,
         maxResults: formData.maxResults
@@ -192,6 +194,7 @@ export const ChatbotManager: React.FC<ChatbotManagerProps> = ({
       description: formData.description.trim(),
       config: {
         searchIndex: formData.searchIndex,
+        secondarySearchIndex: formData.secondarySearchIndex || undefined,
         openaiModel: formData.openaiModel,
         temperature: formData.temperature,
         maxResults: formData.maxResults
@@ -290,6 +293,7 @@ export const ChatbotManager: React.FC<ChatbotManagerProps> = ({
       name: chatbot.name,
       description: chatbot.description,
       searchIndex: chatbot.config.searchIndex,
+      secondarySearchIndex: chatbot.config.secondarySearchIndex || '',
       openaiModel: chatbot.config.openaiModel,
       temperature: chatbot.config.temperature,
       maxResults: chatbot.config.maxResults,
@@ -317,6 +321,7 @@ export const ChatbotManager: React.FC<ChatbotManagerProps> = ({
       name: '',
       description: '',
       searchIndex: 'CBM Products1',
+      secondarySearchIndex: '',
       openaiModel: 'gpt-4.1-2025-04-14',
       temperature: 0.7,
       maxResults: 10,
@@ -438,7 +443,10 @@ export const ChatbotManager: React.FC<ChatbotManagerProps> = ({
                               Updated {formatDate(chatbot.updatedAt)}
                             </div>
                             <div className="space-y-1 text-xs text-muted-foreground">
-                              <p>Index: {chatbot.config.searchIndex}</p>
+                              <p>Primary Index: {chatbot.config.searchIndex}</p>
+                              {chatbot.config.secondarySearchIndex && (
+                                <p>Secondary Index: {chatbot.config.secondarySearchIndex}</p>
+                              )}
                               <p>Model: {chatbot.config.openaiModel}</p>
                               <p>Temperature: {chatbot.config.temperature}</p>
                             </div>
@@ -506,13 +514,26 @@ export const ChatbotManager: React.FC<ChatbotManagerProps> = ({
                       </div>
 
                       <div>
-                        <Label>Search Index *</Label>
+                        <Label>Primary Search Index *</Label>
                         <Input
                           value={formData.searchIndex}
                           onChange={(e) => setFormData(prev => ({ ...prev, searchIndex: e.target.value }))}
                           placeholder="CBM Products1"
                           className="mt-1"
                         />
+                      </div>
+
+                      <div>
+                        <Label>Secondary Search Index (Optional)</Label>
+                        <Input
+                          value={formData.secondarySearchIndex}
+                          onChange={(e) => setFormData(prev => ({ ...prev, secondarySearchIndex: e.target.value }))}
+                          placeholder="Leave empty if not needed"
+                          className="mt-1"
+                        />
+                        <p className="text-xs text-muted-foreground mt-1">
+                          If configured, this index can be used as a fallback source (feature coming soon)
+                        </p>
                       </div>
 
                       <div>
