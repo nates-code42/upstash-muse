@@ -32,6 +32,7 @@ interface Message {
   response: string;
   timestamp: Date;
   searchResults?: SearchResult[];
+  usedSecondarySearch?: boolean;
 }
 
 interface Source {
@@ -717,21 +718,6 @@ Based on these results, can you answer the user's query sufficiently?`;
     }
   };
 
-  // Helper function: Deduplicate search results by ID
-  const deduplicateResults = (
-    primaryResults: SearchResult[],
-    secondaryResults: SearchResult[]
-  ): SearchResult[] => {
-    const seenIds = new Set(primaryResults.map(r => r.id));
-    const uniqueSecondary = secondaryResults.filter(r => !seenIds.has(r.id));
-    const merged = [...primaryResults, ...uniqueSecondary];
-
-    // Sort by relevance score (descending)
-    merged.sort((a, b) => (b.score || 0) - (a.score || 0));
-
-    console.log(`Deduplicated results: ${primaryResults.length} primary + ${uniqueSecondary.length} unique secondary = ${merged.length} total`);
-    return merged;
-  };
 
   // Helper function: Select appropriate prompt for response generation
   const selectPromptForResponse = (
@@ -885,7 +871,7 @@ Based on these results, can you answer the user's query sufficiently?`;
             const secondaryIndex = client.index(activeChatbot.config.secondarySearchIndex);
             const secondaryResponse = await secondaryIndex.search({
               query: query,
-              limit: 10,
+              limit: 100,
             });
 
             const secondaryResults = (secondaryResponse || [])
@@ -895,9 +881,10 @@ Based on these results, can you answer the user's query sufficiently?`;
             console.log('Secondary search returned:', secondaryResults.length, 'results');
 
             if (secondaryResults.length > 0) {
-              // Merge and deduplicate
-              searchResults = deduplicateResults(searchResults, secondaryResults);
+              // Merge primary and secondary results (no deduplication needed - different content types)
+              searchResults = [...searchResults, ...secondaryResults];
               usedSecondarySearch = true;
+              console.log('Combined results:', searchResults.length, '(10 primary + 10 secondary)');
             }
           } catch (secondaryError) {
             console.error('Secondary search failed, continuing with primary results:', secondaryError);
@@ -1085,7 +1072,8 @@ Please provide a comprehensive answer based on this information.`;
         query,
         response: aiResponse,
         timestamp: new Date(),
-        searchResults
+        searchResults,
+        usedSecondarySearch
       };
 
       setMessages(prev => [...prev, newMessage]);
@@ -1408,7 +1396,15 @@ Please provide a comprehensive answer based on this information.`;
                           <div className="flex-1 max-w-3xl">
                             <div className="bg-muted/50 rounded-2xl rounded-tl-md px-6 py-4 shadow-sm">
                               <div className="flex justify-between items-start mb-3">
-                                <span className="text-xs font-medium text-muted-foreground">AI Assistant</span>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs font-medium text-muted-foreground">AI Assistant</span>
+                                  {message.usedSecondarySearch && (
+                                    <Badge variant="secondary" className="h-5 text-xs">
+                                      <Database className="h-3 w-3 mr-1" />
+                                      Multi-source
+                                    </Badge>
+                                  )}
+                                </div>
                                 <Button
                                   variant="ghost"
                                   size="sm"
@@ -1419,10 +1415,10 @@ Please provide a comprehensive answer based on this information.`;
                                 </Button>
                               </div>
                               <div className="prose prose-sm max-w-none text-foreground">
-                                <div 
+                                <div
                                   className="whitespace-pre-wrap leading-relaxed"
-                                  dangerouslySetInnerHTML={{ 
-                                    __html: parseMarkdownLinks(message.response) 
+                                  dangerouslySetInnerHTML={{
+                                    __html: parseMarkdownLinks(message.response)
                                   }}
                                 />
                               </div>
